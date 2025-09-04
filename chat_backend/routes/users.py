@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from .. import models, schemas, auth_utils, database
 from ..database import get_db
+from ..auth_utils import verify_password, create_access_token, get_current_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -15,11 +16,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     # 2. Verify password
-    if not auth_utils.verify_password(form_data.password, user.password_hash):
+    if not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     # 3. Create JWT
-    access_token = auth_utils.create_access_token(data={"sub": str(user.id)})
+    access_token = create_access_token(data={"sub": str(user.id)})
 
     # 4. Return token
     return {"access_token": access_token, "token_type": "bearer"}
@@ -41,3 +42,7 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(database.get_d
     db.refresh(new_user)
 
     return new_user
+
+@router.get("/me", response_model=schemas.UserOut)
+def read_users_me(current_user: models.User = Depends(get_current_user)):
+    return current_user

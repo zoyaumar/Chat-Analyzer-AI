@@ -41,26 +41,6 @@ logger.info("App is starting!")
 #         content={"detail": str(exc)},  # sends error back to browser
 #     )
 
-# @app.post("/register")
-# def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-#     db_user = models.User(username=user.username, password_hash=user.password_hash)
-#     db.add(db_user)
-#     db.commit()
-#     db.refresh(db_user)
-#     return {"id": db_user.id, "username": db_user.username}
-
-# @app.post("/send_message")
-# def send_message(msg: schemas.MessageCreate, db: Session = Depends(get_db)):
-#     db_msg = models.Message(user_id=msg.user_id, text=msg.text)
-#     db.add(db_msg)
-#     db.commit()
-#     db.refresh(db_msg)
-#     return db_msg
-
-# @app.get("/messages", response_model=list[schemas.MessageOut])
-# def get_messages(db: Session = Depends(get_db)):
-#     messages = db.query(models.Message).all()
-#     return messages
 
 @app.get("/test-db")
 def test_db(db: Session = Depends(get_db)):
@@ -73,5 +53,3 @@ def read_root():
     logger.info("working")
     print("working", flush=True)
     return {"message": "Hello, FastAPI is working!"}
-
-logger.info("working1")
