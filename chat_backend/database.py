@@ -5,9 +5,8 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import text
 
 
-#load_dotenv()  
-#DATABASE_URL = os.getenv("DATABASE_URL")
-DATABASE_URL = "postgresql://postgres%2Eknwxpnefclphfaflkmgj:Zozoumar123@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+load_dotenv()  
+DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("❌ DATABASE_URL is not set")
 
