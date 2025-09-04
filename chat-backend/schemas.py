@@ -1,19 +1,55 @@
 from pydantic import BaseModel
 from datetime import datetime
 
-class UserCreate(BaseModel):
+# ======================
+# Users
+# ======================
+class UserBase(BaseModel):
     username: str
-    password_hash: str
 
-class MessageCreate(BaseModel):
-    user_id: int
+# For registration (client sends plain password)
+class UserCreate(UserBase):
+    password: str
+
+# For returning safe user data
+class UserOut(UserBase):
+    id: int
+
+    class Config:
+        from_attributes = True  # replaces orm_mode in Pydantic v2
+
+
+# ======================
+# Authentication
+# ======================
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    sub: str | None = None
+
+
+# ======================
+# Messages
+# ======================
+class MessageBase(BaseModel):
     text: str
 
-class MessageOut(BaseModel):
+class MessageCreate(MessageBase):
+    pass  # no user_id, we’ll use JWT user
+
+class MessageOut(MessageBase):
     id: int
     user_id: int
-    text: str
     timestamp: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+class MessageWithUser(MessageOut):
+    user: UserOut
