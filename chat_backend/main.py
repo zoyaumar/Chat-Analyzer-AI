@@ -3,6 +3,8 @@ from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from chat_backend.routes import analytics
 from . import models, schemas, database
 from .database import get_db, engine
 from .routes import users, messages
@@ -18,6 +20,7 @@ app = FastAPI(
 
 app.include_router(users.router)
 app.include_router(messages.router)
+app.include_router(analytics.router)
 
 logger = logging.getLogger("uvicorn.error")  # this is Uvicorn’s error logger
 logger.info("App is starting!")
@@ -52,4 +55,4 @@ def test_db(db: Session = Depends(get_db)):
 def read_root():
     logger.info("working")
     print("working", flush=True)
-    return {"message": "Hello, FastAPI is working!"}
+    return {"message": "Welcome to Chat Analyzer API with AI!"}
