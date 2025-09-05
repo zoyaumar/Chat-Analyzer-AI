@@ -6,4 +6,4 @@ python-jose
 passlib[bcrypt]
 python-dotenv
 transformers
-torch
+torch==<version>+cpu -f https://download.pytorch.org/whl/torch_stable.html
