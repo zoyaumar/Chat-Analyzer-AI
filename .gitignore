@@ -1,8 +1,36 @@
-# Ignore environment variables
-.env
+# Node
+node_modules/
+dist/
+build/
 
-# Ignore Python cache
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Python (backend)
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.sqlite3
 
-node_modules/
+# Virtual env
+venv/
+.env/
+.venv/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
