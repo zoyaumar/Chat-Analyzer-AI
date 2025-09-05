@@ -1,18 +1,29 @@
 services:
+  # Backend (FastAPI + Python)
   - type: web
     name: chat-backend
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port 8000
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
+    plan: free
     envVars:
       - key: DATABASE_URL
-        sync: false
-    plan: free
-    rootDir: chat-backend
+        fromDatabase:
+          name: chat-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
 
-  - type: static_site
+  # Frontend (React + Vite)
+  - type: web
     name: chat-frontend
-    rootDir: chat-frontend
+    env: node
     buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    startCommand: npm run preview -- --port 10000 --host 0.0.0.0
+    publishPath: ./chat-frontend/dist
     plan: free
+    envVars:
+      - key: VITE_API_URL
+        value: https://chat-backend.onrender.com  
