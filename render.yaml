@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: chat-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 8000
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+    plan: free
+    rootDir: chat-backend
+
+  - type: web
+    name: chat-frontend
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run preview -- --host 0.0.0.0 --port 3000
+    staticPublishPath: dist
+    rootDir: chat-frontend
+    plan: free
