@@ -1,7 +1,7 @@
 import axios from "axios";
 import type { TokenResponse, Message, SentimentResult, SummaryResult } from "./types";
 
-const API = axios.create({ baseURL: "http://127.0.0.1:8000" });
+const API = axios.create({ baseURL: import.meta.env.VITE_API_URL  });
 
 // Attach JWT if available
 API.interceptors.request.use((req) => {
