@@ -15,15 +15,3 @@ services:
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "30"
-
-  # Frontend (React + Vite)
-  - type: web
-    name: chat-frontend
-    env: node
-    buildCommand: npm install && npm run build
-    startCommand: npm run preview -- --port 10000 --host 0.0.0.0
-    publishPath: ./chat-frontend/dist
-    plan: free
-    envVars:
-      - key: VITE_API_URL
-        value: https://chat-backend.onrender.com  
