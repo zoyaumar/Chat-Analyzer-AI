@@ -8,6 +8,8 @@ from chat_backend.routes import analytics
 from . import models, schemas, database
 from .database import get_db, engine
 from .routes import users, messages
+from fastapi.middleware.cors import CORSMiddleware
+
 import logging
 
 models.Base.metadata.create_all(bind=database.engine)
@@ -16,7 +18,20 @@ app = FastAPI(
     title="Chat Analyzer AI",
     description="Backend API for chat storage and analysis",
     version="0.1.0"
-    )
+)
+
+origins = [
+    "http://localhost:5173",  # Vite default
+    "http://localhost:3000",  # React CRA default
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 app.include_router(users.router)
 app.include_router(messages.router)
