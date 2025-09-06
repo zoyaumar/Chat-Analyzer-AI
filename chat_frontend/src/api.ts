@@ -13,7 +13,7 @@ API.interceptors.request.use((req) => {
 });
 
 // --- Auth ---
-export const registerUser = (data: { username: string; password_hash: string }) =>
+export const registerUser = (data: { username: string; password: string }) =>
   API.post("/users/register", data);
 
 export const loginUser = (data: { username: string; password: string }) =>
@@ -33,3 +33,20 @@ export const analyzeSentiment = (text: string) =>
   API.post<SentimentResult>("/analytics/sentiment", null, { params: { text } });
 
 export const getDailySummary = () => API.get<SummaryResult>("/analytics/daily");
+
+export function connectWebSocket(
+  onMessage: (msg: Message) => void,
+  token: string
+): WebSocket {
+  const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat?token=${token}`);
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    onMessage(data);
+  };
+
+  return ws;
+}
+
+
+

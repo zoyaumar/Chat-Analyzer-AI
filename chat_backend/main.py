@@ -1,10 +1,13 @@
 import traceback
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
+from typing import List
 from fastapi.responses import JSONResponse
+from jose import JWTError, jwt
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from chat_backend.routes import analytics
+from chat_backend.auth_utils import ALGORITHM, SECRET_KEY, get_current_user
+from chat_backend.routes import analytics, websocket
 from . import models, schemas, database
 from .database import get_db, engine
 from .routes import users, messages
@@ -23,22 +26,26 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",  # Vite default
     "http://localhost:3000",  # React CRA default
+    "http://127.0.0.1:8000"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # Change "*" to specific origins in production
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"], 
+    allow_headers=["*"],  
 )
 
 app.include_router(users.router)
 app.include_router(messages.router)
 app.include_router(analytics.router)
+app.include_router(websocket.router)
 
-logger = logging.getLogger("uvicorn.error")  # this is Uvicorn’s error logger
+logger = logging.getLogger("uvicorn.error")  
 logger.info("App is starting!")
+
+
 
 # # Dependency
 # def get_db():

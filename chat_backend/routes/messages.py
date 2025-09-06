@@ -23,7 +23,7 @@ def create_message(
     return db_message
 
 @router.get("/")
-def list_messages(db: Session = Depends(get_db), skip: int = 0, limit: int = 10):
+def list_messages(db: Session = Depends(get_db), skip: int = 0, limit: int = 100):
     return db.query(models.Message).offset(skip).limit(limit).all()
 
 @router.delete("/{message_id}")

@@ -1,25 +1,70 @@
-import { useEffect, useState } from "react";
-import { getMessages, sendMessage } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { connectWebSocket, getMessages, sendMessage } from "../api";
 import Navbar from "../components/Navbar";
 import type { Message } from "../types";
+import { jwtDecode } from "jwt-decode";
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
+  const [input, setInput] = useState("");
+  const ws = useRef<WebSocket | null>(null);
+  const [currentUser, setCurrentUser] = useState({ id: 1 }); // Placeholder for current user
 
-  useEffect(() => {
-    fetchMessages();
-  }, []);
-
-  const fetchMessages = async () => {
-    const res = await getMessages();
-    setMessages(res.data);
+  type DecodedToken = {
+    sub: string;   // user ID in your token payload
+    exp: number;   // expiration
   };
 
+  useEffect(() => {
+    // fetchMessages();
+    const token = localStorage.getItem("token");
+    if (token) {
+      try {
+        const decoded: DecodedToken = jwtDecode(token);
+        setCurrentUser({ id: Number(decoded.sub) });
+
+        // connect websocket with token in query string
+        ws.current = connectWebSocket(
+          (msg) => setMessages((prev) => [...prev, msg]),
+          token
+        );
+      } catch (err) {
+        console.error("Invalid token", err);
+        // navigate("/login");
+        return;
+      }
+    } else {
+      console.error("No token found");
+      // navigate("/login");
+      return;
+    }
+    // fetch existing messages
+    getMessages().then((res) => setMessages(res.data));
+
+    return () => {
+      ws.current?.close();
+    };
+  }, []);
+
+
+
+  // const fetchMessages = async () => {
+  //   const res = await getMessages();
+  //   setMessages(res.data);
+  // };
+
+  // const handleSend = async () => {
+  //   await sendMessage({ text, user_id: 1 }); // later, derive from JWT
+  //   setText("");
+  //   fetchMessages();
+  // };
   const handleSend = async () => {
-    await sendMessage({ text, user_id: 1 }); // later, derive from JWT
-    setText("");
-    fetchMessages();
+    if (!input.trim()) return;
+    const messagePayload = { text: input, user_id: currentUser.id };
+    await sendMessage(messagePayload);
+    ws.current?.send(JSON.stringify(messagePayload));
+    setInput("");
   };
 
   return (
