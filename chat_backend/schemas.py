@@ -1,5 +1,7 @@
-from pydantic import BaseModel
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
 
 # ======================
 # Users
@@ -15,8 +17,7 @@ class UserCreate(UserBase):
 class UserOut(UserBase):
     id: int
 
-    class Config:
-        from_attributes = True  # replaces orm_mode in Pydantic v2
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ======================
@@ -48,8 +49,7 @@ class MessageOut(MessageBase):
     user_id: int
     timestamp: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MessageWithUser(MessageOut):
     user: UserOut

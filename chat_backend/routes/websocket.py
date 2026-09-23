@@ -1,9 +1,11 @@
 import json
 from typing import List
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from jose import JWTError, jwt
 
-from chat_backend.auth_utils import ALGORITHM, SECRET_KEY
+import jwt
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from chat_backend.auth_utils import ALGORITHM
+from chat_backend.config import settings
 
 router = APIRouter()
 
@@ -33,8 +35,8 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    except jwt.InvalidTokenError:
         await websocket.close(code=1008)
         return
     if payload.get("sub") is None:

@@ -1,48 +1,49 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import models, schemas, auth_utils, database
-from ..database import get_db
-from ..auth_utils import verify_password, create_access_token, get_current_user
+from chat_backend import auth_utils, models, schemas
+from chat_backend.auth_utils import create_access_token, get_current_user
+from chat_backend.database import get_db
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post("/login", response_model=schemas.Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # 1. Get the user from DB
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    if not user:
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(models.User).where(models.User.username == form_data.username)
+    )
+    user = result.scalars().first()
+    if not user or not auth_utils.verify_password(
+        form_data.password, user.password_hash
+    ):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    # 2. Verify password
-    if not verify_password(form_data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    # 3. Create JWT
     access_token = create_access_token(data={"sub": str(user.id)})
-
-    # 4. Return token
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/register", response_model=schemas.UserOut)
-def register_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
-    # Check if username is taken
-    db_user = db.query(models.User).filter(models.User.username == user.username).first()
-    if db_user:
+async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.User).where(models.User.username == user.username)
+    )
+    if result.scalars().first():
         raise HTTPException(status_code=400, detail="Username already registered")
 
-    # Hash the password before storing
-    hashed_pw = auth_utils.get_password_hash(user.password)
-    new_user = models.User(username=user.username, password_hash=hashed_pw)
-
+    new_user = models.User(
+        username=user.username,
+        password_hash=auth_utils.get_password_hash(user.password),
+    )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
+    await db.commit()
+    await db.refresh(new_user)
     return new_user
 
 @router.get("/me", response_model=schemas.UserOut)
-def read_users_me(current_user: models.User = Depends(get_current_user)):
+async def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user

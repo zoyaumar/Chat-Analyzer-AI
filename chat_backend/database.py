@@ -1,38 +1,14 @@
-import os
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 
+from chat_backend.config import settings
 
-load_dotenv()  
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("❌ DATABASE_URL is not set")
-
-
-engine = create_engine(DATABASE_URL, connect_args={"sslmode": "require"})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-with engine.connect() as conn:
-    print(conn.execute(text("SELECT 1")).scalar())
-
-    
+engine = create_async_engine(settings.database_url)
+SessionLocal = async_sessionmaker(engine, autoflush=False, expire_on_commit=False)
 
 Base = declarative_base()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
-if __name__ == "__main__":
-    try:
-        with engine.connect() as conn:
-            result = conn.execute("SELECT 1").scalar()
-            print("✅ Database connected:", result)
-    except Exception as e:
-        print("❌ DB connection failed:", e)
-
+async def get_db():
+    async with SessionLocal() as session:
+        yield session

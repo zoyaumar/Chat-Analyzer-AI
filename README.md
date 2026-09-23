@@ -67,9 +67,9 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Area | Feature | Status | Milestone |
 | --- | --- | --- | --- |
 | Auth | Registration with bcrypt-hashed passwords | ✅ | — |
-| Auth | Login → signed JWT (HS256, `PyJWT`, configurable lifetime) | ✅ | lifetime wiring in M1 |
+| Auth | Login → signed JWT (HS256, `PyJWT`, configurable lifetime) | ✅ | — |
 | Auth | Bearer-token guard on protected endpoints | ✅ | — |
-| Auth | `GET /users/me` profile lookup | 🟡 returns a user id, not a `UserOut` payload | M1 |
+| Auth | `GET /users/me` profile lookup | ✅ | — |
 | Auth | Refresh tokens + server-side logout | 🔨 | M4 |
 | Chat | Send a message (REST, persisted) | ✅ | — |
 | Chat | List messages | ✅ auth-required and scoped to the sender; no pagination in the UI yet | pagination in M1 (B10) |
@@ -77,7 +77,7 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Chat | Realtime delivery | 🟡 authenticated JSON echo only: no persistence, no fan-out — **deliberately kept and finished in M2** | M2 |
 | Analytics | Sentiment analysis | 🟡 works, but the model loads at import and results are not stored | M3 |
 | Analytics | Daily summary | 🟡 scoped to the authenticated user; UTC-boundary caveat | M3 (quality work) |
-| Data | Alembic as the single schema owner | 🔨 an alter-style revision plus `create_all()` today | M1 |
+| Data | Alembic as the single schema owner | ✅ real initial migration; `create_all()` removed | — |
 | Data | Async database access (`asyncpg` + `AsyncSession`) | 🔨 sync `Session` + sync driver today | M1 |
 | Frontend | Login / register / chat / analytics screens, routing, logout | ✅ | — |
 | Frontend | Single-origin API access (no CORS, no hard-coded URLs) | 🔨 | M1 |
@@ -159,9 +159,9 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Framework | FastAPI, routers split per resource; OpenAPI at `/docs` | in use |
 | ORM | SQLAlchemy 2.0 — `AsyncSession` + `asyncpg` | M1 (sync `Session` + `psycopg` sync driver today) |
 | Validation | Pydantic v2 (`from_attributes`) | in use |
-| Auth | **PyJWT** (`HS256`) + bcrypt password hashing | PyJWT in M1 (`python-jose` today) |
+| Auth | **PyJWT** (`HS256`) + bcrypt password hashing | PyJWT ✅ (since M1) |
 | Database | PostgreSQL 16 in Docker Compose, locally and when hosted | M1 (shared hosted instance today) |
-| Migrations | Alembic as the only writer of DDL | M1 (`create_all()` also runs today) |
+| Migrations | Alembic as the only writer of DDL | ✅ (`create_all()` removed) |
 | Config | One `pydantic-settings` object reading `.env`, failing fast on missing secrets | M1 (`os.getenv` scattered today) |
 | NLP | Distilled summariser + sentiment, lazy-loaded, results persisted | M3 (`bart-large-cnn`, eager, at import today) |
 | Packaging | `pyproject.toml` + a single pinned requirements file (`uv` optional) | M1 (two `requirements.txt` files today) |
@@ -279,7 +279,7 @@ cp .env.example .env        # then fill in DATABASE_URL and SECRET_KEY
 ```bash
 py -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
-py -m pip install -r chat_backend/requirements.txt
+py -m pip install -r requirements.txt
 
 # run from the repository root: the package uses `chat_backend.` imports
 uvicorn chat_backend.main:app --reload --port 8000
@@ -394,20 +394,18 @@ alembic upgrade head                              # apply the schema
 alembic revision --autogenerate -m "add x"        # after changing models.py
 ```
 
-**How the schema is managed (M1):** Alembic is the only thing that writes DDL. The app stops
-calling `Base.metadata.create_all()`, the alter-style revision `06c1b9c7b0ec` is replaced by a
-true `op.create_table(...)` initial migration, and the `api` container runs
-`alembic upgrade head` before starting Uvicorn.
+**How the schema is managed:** Alembic is the only thing that writes DDL. The revision
+`06c1b9c7b0ec` is a true `op.create_table(...)` initial migration, `create_all()` no longer
+runs anywhere, and `alembic upgrade head` succeeds against an empty database — verified
+against a fresh PostgreSQL 16 container, which is also what the test suite runs on.
 
-> **Known caveat today.** Because `create_all()` still runs on import and the checked-in
-> revision only *alters* existing tables, `alembic upgrade head` fails against a fresh
-> database. This is gap **D1/D2** in
-> [`docs/GAPS_AND_IMPROVEMENTS.md`](docs/GAPS_AND_IMPROVEMENTS.md) and is fixed in M1 —
-> which is also what makes the Compose quickstart possible.
+> **Note for the existing development database.** Because that database already had the
+> tables (from the old `create_all()` era), stamp it once instead of upgrading:
+> `alembic stamp head`. Fresh databases just need `alembic upgrade head` (gap **D11**).
 
-Planned schema follow-ups (M1+): an index on `messages (user_id, timestamp DESC)` for the
-feed and the daily-summary query, an explicit `ON DELETE` policy for `user_id`, and
-`created_at`/`updated_at` columns.
+Planned schema follow-ups: an index on `messages (user_id, timestamp DESC)` for the
+feed and the daily-summary query (D3), an explicit `ON DELETE` policy for `user_id` (D4),
+and `created_at`/`updated_at` columns (D5).
 
 ## API reference
 
@@ -453,8 +451,8 @@ The JWT payload is `{ "sub": "<user_id>", "exp": <unix ts> }`; M1 adds `iat`/`jt
 revocation list becomes possible later (gaps S7/Q9).
 </details>
 
-> `/users/me` currently gets a user id back from `get_current_user` while declaring
-> `response_model=UserOut`, so it fails response validation (HTTP 500). Fixed in M1 — gap **B2**.
+> `/users/me` returns the authenticated user's profile (`{id, username}`); the old
+> response-validation 500 is fixed — gap **B2**, covered by `test_users_me_returns_profile`.
 
 ### Messages
 
@@ -607,27 +605,33 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | --- | --- | --- |
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
-| Backend syntax | `py -m compileall chat_backend alembic` | ✅ passes |
-| Backend tests | `pytest` | 🔨 M1 |
+| Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
+| Backend tests | `py -m pytest` | ✅ 15 passing (needs a Postgres; see below) |
+| Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
+| Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
+| Backend type-check | `mypy` | 🔨 M1 (T3) |
 | Frontend tests | `cd chat_frontend && npm test` | 🔨 M2 |
-| Migrations against an empty database | `alembic upgrade head` | 🔨 M1 |
-| Backend lint/format + types | `ruff check`, `mypy` | 🔨 M1 |
-| CI (all of the above on every push) | GitHub Actions | 🔨 M1 |
+| CI (all of the above on every push) | GitHub Actions | 🔨 M1 (O6) |
 
-**Planned test stack.**
+**Backend test suite.** `tests/` covers register/login (happy path, duplicate username, wrong
+password), `GET /users/me` (with/without token), message create/list/delete with
+ownership checks, analytics with monkeypatched models (no weights downloaded), daily-summary
+user scoping, and the WebSocket accept/reject/echo paths. The suite runs against a real
+PostgreSQL — start a disposable one with:
 
-- **Backend:** `pytest` + `pytest-asyncio` with `httpx.ASGITransport` against the FastAPI app
-  (no live server needed), a PostgreSQL service in CI, and a fixture that wraps each test in a
-  transaction and rolls it back. `get_db` is overridden in tests, and the NLP layer is
-  monkeypatched so no model weights are downloaded during a test run.
-- First cases to write, chosen because they would have caught the bugs found in review:
-  register/login happy path and duplicate username; `GET /users/me` returns a profile;
-  `GET /messages/` requires a token and returns only the caller's messages; deleting another
-  user's message is a 404; `/analytics/daily` ignores other users' rows; the WebSocket rejects a
-  connection without a valid token.
-- **Frontend:** Vitest + React Testing Library with MSW for the API, covering the login flow
-  (token stored, redirect to `/chat`), the composer (typing + clicking Send issues exactly one
-  `POST /messages/`), and the `RequireAuth` guard.
+```bash
+docker run --rm -d --name chat-test-pg \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=chat_test -p 5433:5432 postgres:16
+py -m pytest
+```
+
+`tests/conftest.py` points `DATABASE_URL` at `postgresql+asyncpg://…@127.0.0.1:5433/chat_test`
+by default (override with `TEST_DATABASE_URL`), creates the schema from metadata, and
+`TRUNCATE`s between tests.
+
+**Planned (frontend).** Vitest + React Testing Library with MSW for the API, covering the
+login flow (token stored, redirect to `/chat`), the composer (typing + clicking Send issues
+exactly one `POST /messages/`), and the `RequireAuth` guard.
 
 ## Milestones & roadmap
 
@@ -637,17 +641,17 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 
 | Work | Gaps |
 | --- | --- |
-| Migrate to async SQLAlchemy (`asyncpg`, `AsyncSession`, async `get_db`) | B13 |
+| ~~Migrate to async SQLAlchemy (`asyncpg`, `AsyncSession`, async `get_db`)~~ ✅ | B13 |
 | Single origin: Vite dev proxy + FastAPI static mount; drop the CORS wildcard | S4, F2, F15 |
-| Fix the composer so Send actually posts | F1 |
-| Scope messages and the daily summary to the authenticated user | S2, S3 |
-| Fix `/users/me` and the `get_current_user` contract | B2 |
-| Replace `python-jose` with `PyJWT`; add `iat`/`jti` | B14, S7 |
-| Alembic as the only schema owner; real initial migration; remove `create_all()` | D1, D2, B9, D11 |
-| One settings object; fail fast without `SECRET_KEY`; honour token lifetime | B6, S5 |
-| One pinned dependency list + `pyproject.toml` + `ruff`/`mypy` | D8, T3, T4, A5 |
+| ~~Fix the composer so Send actually posts~~ ✅ | F1 |
+| ~~Scope messages and the daily summary to the authenticated user~~ ✅ | S2, S3 |
+| ~~Fix `/users/me` and the `get_current_user` contract~~ ✅ | B2 |
+| Replace `python-jose` with `PyJWT` ✅; add `iat`/`jti` | B14 ✅, S7 |
+| ~~Alembic as the only schema owner; real initial migration; remove `create_all()`~~ ✅ | D1, D2, B9, D11 |
+| ~~One settings object; fail fast without `SECRET_KEY`~~ ✅; honour `iat`/`jti` later | B6 ✅, S5 🟡 |
+| ~~One pinned dependency list + `pyproject.toml` + `ruff`~~ ✅; `mypy` still open | D8, T3 🟡, T4, A5 |
 | Docker + Compose (`db`, `api`, `web`) with migrations on start | O13 |
-| Backend tests for auth, ownership and `/users/me`; CI on every push | T1, T5, O6 |
+| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (15 passing); CI on every push | T1 ✅, T5, O6 |
 | `/health` + `/health/ready`; retire the public `/test-db` diagnostics | B8, O5 |
 
 **M2 — Realtime as a first-class channel**
