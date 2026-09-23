@@ -1,69 +1,69 @@
-# React + TypeScript + Vite
+# chat_frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Single-page client for Chat Analyzer AI. React 19 + TypeScript + Vite 7 + Tailwind CSS 4.
 
-Currently, two official plugins are available:
+Setup, architecture and API details live in the [root README](../README.md); this file
+covers only the frontend.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Running locally
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev        # http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The backend must be running on `http://127.0.0.1:8000` — the base URL is currently
+hard-coded in `src/api.ts` (`VITE_API_URL` is not read yet, see gap **F2** in
+[`../docs/GAPS_AND_IMPROVEMENTS.md`](../docs/GAPS_AND_IMPROVEMENTS.md)).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Script | Description |
+| --- | --- |
+| `npm run dev` | Vite dev server with HMR |
+| `npm run build` | `tsc -b` type-check, then production bundle into `dist/` |
+| `npm run preview` | Serve the built bundle locally |
+| `npm run lint` | ESLint 9 (flat config) over the whole project |
+| `npm run tailwind:init` | Legacy Tailwind CLI helper; not needed with Tailwind 4 |
+
+## Source layout
+
 ```
+src/
+├── api.ts                  # axios instance, request interceptor, endpoint wrappers, WS connector
+├── types.ts                # User, Message, TokenResponse, SentimentResult, SummaryResult
+├── App.tsx                 # BrowserRouter route table
+├── main.tsx                # React root
+├── index.css               # `@import "tailwindcss";`
+├── components/
+│   ├── Navbar.tsx          # links + logout (clears the token)
+│   └── MessageList.tsx     # currently empty — extract the message list from Chat.tsx here
+└── pages/
+    ├── Login.tsx           # POST /users/login -> localStorage token -> /chat
+    ├── Register.tsx        # POST /users/register -> /login
+    ├── Chat.tsx            # message feed, composer, WebSocket connection
+    └── Analytics.tsx       # sentiment form + daily summary button
+```
+
+## Routing
+
+| Path | Page | Guard |
+| --- | --- | --- |
+| `/`, `/login` | `Login` | – |
+| `/register` | `Register` | – |
+| `/chat` | `Chat` | none yet (gap **F4**) |
+| `/analytics` | `Analytics` | none yet (gap **F4**) |
+
+## Styling
+
+Tailwind CSS 4 is wired through the `@tailwindcss/vite` plugin in `vite.config.ts`, and
+`src/index.css` contains the single `@import "tailwindcss";` entry point.
+`tailwind.config.js` is a leftover Tailwind 3 style config and is **not** read by Tailwind 4
+— move any theme customisation into a CSS `@theme` block (gap **F7**).
+
+## State & auth
+
+- The JWT lives in `localStorage` under the key `token`.
+- `api.ts` attaches it as `Authorization: Bearer <token>` via a request interceptor.
+- `Chat.tsx` decodes `sub` with `jwt-decode` to learn the current user id.
+- There is no 401 interceptor or token-expiry handling yet (gap **F5**).
