@@ -25,6 +25,14 @@ async def test_messages_require_token(client: AsyncClient, user_and_token):
     assert (await client.post("/messages/", json={"text": "x"})).status_code == 401
 
 
+async def test_messages_reject_oversized_text(client: AsyncClient, user_and_token):
+    _, _, token = user_and_token
+    response = await client.post(
+        "/messages/", json={"text": "x" * 4001}, headers=_auth(token)
+    )
+    assert response.status_code == 422
+
+
 async def test_messages_scoped_to_sender(client: AsyncClient):
     # Two users; each must only ever see their own messages.
     await client.post("/users/register", json={"username": "u1", "password": "pw123456"})

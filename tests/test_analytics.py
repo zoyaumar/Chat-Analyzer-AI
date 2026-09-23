@@ -1,6 +1,9 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from httpx import AsyncClient
+
+from chat_backend import models
 
 
 async def test_analytics_sentiment(client: AsyncClient, user_and_token):
@@ -39,6 +42,52 @@ async def test_daily_summary_scoped_to_user(client: AsyncClient):
     # a1's summary must contain only a1's text, never a2's.
     assert "secret one" in resp.json()["summary"]
     assert "secret two" not in resp.json()["summary"]
+
+
+async def test_analytics_sentiment_rejects_oversized_text(
+    client: AsyncClient, user_and_token
+):
+    _, _, token = user_and_token
+    response = await client.post(
+        "/analytics/sentiment",
+        json={"text": "x" * 4001},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 422
+
+
+async def test_daily_summary_uses_a_half_open_utc_day_range(
+    client: AsyncClient, user_and_token, db_session
+):
+    _, _, token = user_and_token
+    user_id = (
+        await client.get("/users/me", headers={"Authorization": f"Bearer {token}"})
+    ).json()["id"]
+    now = datetime.now(timezone.utc)
+    db_session.add_all(
+        [
+            models.Message(
+                user_id=user_id,
+                text="yesterday",
+                timestamp=now - timedelta(days=1),
+            ),
+            models.Message(user_id=user_id, text="today", timestamp=now),
+            models.Message(
+                user_id=user_id,
+                text="tomorrow",
+                timestamp=now + timedelta(days=1),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    with patch("chat_backend.routes.analytics.summarize_text", side_effect=lambda t: t):
+        response = await client.get(
+            "/analytics/daily", headers={"Authorization": f"Bearer {token}"}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["summary"] == "today"
 
 
 async def test_daily_summary_requires_token(client: AsyncClient):

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -11,26 +11,29 @@ from chat_backend.database import get_db
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
-@router.post("/sentiment")
+@router.post("/sentiment", response_model=schemas.SentimentResult)
 def sentiment_analysis(
     payload: schemas.SentimentRequest,
     current_user: models.User = Depends(get_current_user),
 ):
     return analyze_sentiment(payload.text)
 
-@router.get("/daily")
+@router.get("/daily", response_model=schemas.DailySummary)
 async def daily_summary(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # Aware UTC boundary so a naive/aware mismatch can't shift "today" (gap B7).
     today = datetime.now(timezone.utc).date()
     start_of_day = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+    end_of_day = start_of_day + timedelta(days=1)
     result = await db.execute(
-        select(models.Message).where(
+        select(models.Message)
+        .where(
             models.Message.timestamp >= start_of_day,
+            models.Message.timestamp < end_of_day,
             models.Message.user_id == current_user.id,
         )
+        .order_by(models.Message.timestamp)
     )
     messages = result.scalars().all()
 

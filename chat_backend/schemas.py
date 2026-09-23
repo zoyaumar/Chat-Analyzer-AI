@@ -42,7 +42,7 @@ class MessageBase(BaseModel):
     text: str
 
 class MessageCreate(MessageBase):
-    pass  # no user_id, we’ll use JWT user
+    text: str = Field(max_length=4000)
 
 class MessageOut(MessageBase):
     id: int
@@ -58,5 +58,15 @@ class MessageWithUser(MessageOut):
 # ======================
 # Analytics
 # ======================
+class SentimentResult(BaseModel):
+    label: str
+    score: float
+
+
+class DailySummary(BaseModel):
+    date: str
+    summary: str
+
+
 class SentimentRequest(BaseModel):
     text: str = Field(max_length=4000)

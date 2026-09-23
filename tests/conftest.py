@@ -47,6 +47,13 @@ async def clean_tables(setup_schema):
 
 
 @pytest.fixture
+async def db_session():
+    """Provide a direct database session for tests that need precise row values."""
+    async with TestSession() as session:
+        yield session
+
+
+@pytest.fixture
 async def client():
     async def override_get_db():
         async with TestSession() as session:

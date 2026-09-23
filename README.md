@@ -72,11 +72,11 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Auth | `GET /users/me` profile lookup | ✅ | — |
 | Auth | Refresh tokens + server-side logout | 🔨 | M4 |
 | Chat | Send a message (REST, persisted) | ✅ | — |
-| Chat | List messages | ✅ auth-required and scoped to the sender; no pagination in the UI yet | pagination in M1 (B10) |
+| Chat | List messages | ✅ auth-required and scoped to the sender; no pagination in the UI yet | pagination in M2 (B10) |
 | Chat | Delete your own message | 🟡 API only, no UI control | M2 |
 | Chat | Realtime delivery | 🟡 authenticated JSON echo only: no persistence, no fan-out — **deliberately kept and finished in M2** | M2 |
 | Analytics | Sentiment analysis | 🟡 works with lazy model loading; results are not stored | M3 |
-| Analytics | Daily summary | 🟡 scoped to the authenticated user; UTC-boundary caveat | M3 (quality work) |
+| Analytics | Daily summary | 🟡 scoped to the authenticated user; uses a half-open UTC day range | M3 (quality work) |
 | Data | Alembic as the single schema owner | ✅ real initial migration; `create_all()` removed | — |
 | Data | Async database access (`asyncpg` + `AsyncSession`) | ✅ | — |
 | Frontend | Login / register / chat / analytics screens, routing, logout | ✅ | — |
@@ -107,7 +107,7 @@ flowchart LR
         R_ANA["/analytics"]
         R_WS["/ws/chat"]
         AUTH["auth_utils - PyJWT + bcrypt"]
-        SVC["services / crud layer"]
+        ROUTES["route handlers / DB queries"]
     end
 
     subgraph Compose["docker compose"]
@@ -124,11 +124,11 @@ flowchart LR
     R_USERS --> AUTH
     R_MSG --> AUTH
     R_ANA --> AUTH
-    R_USERS --> SVC
-    R_MSG --> SVC
-    R_ANA --> SVC
-    SVC --> DB
-    R_WS --> SVC
+    R_USERS --> ROUTES
+    R_MSG --> ROUTES
+    R_ANA --> ROUTES
+    ROUTES --> DB
+    R_WS --> ROUTES
     R_ANA --> INF
     ALEMBIC --> DB
 ```
@@ -136,17 +136,16 @@ flowchart LR
 Request flow in words:
 
 1. The SPA talks to **one origin**: the Vite dev server proxies to the API in development,
-   and in a shipped build FastAPI serves the static bundle itself. That removes CORS from the
-   equation entirely (see gap S4).
+   and in the shipped Docker stack nginx serves the SPA and proxies API/WebSocket traffic. That
+   removes CORS from the equation entirely (see gap S4).
 2. The client stores the JWT and attaches it as `Authorization: Bearer <token>` on every
    request through a single client module (`src/api.ts`).
 3. FastAPI validates the token in `auth_utils`, resolves the current user, and hands the route
    an async `AsyncSession` through the `get_db` dependency.
-4. Route handlers go through a small service/CRUD layer, so the same message-creation path can
-   be reused by the WebSocket handler — which broadcasts the created message to every connected
-   client.
-5. Analytics endpoints call the NLP layer; scores are computed once and persisted alongside the
-   message instead of being recalculated on every request.
+4. Route handlers currently contain the database queries. When B1 adds the WebSocket write path,
+   move the shared message operations into `crud.py` so REST and socket use one persistence path.
+5. Analytics endpoints call the NLP layer. Results are currently computed on demand; persisting
+   scores with each message is scheduled for M3.
 
 ## Tech stack
 
@@ -157,16 +156,16 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Concern | Choice | Status |
 | --- | --- | --- |
 | Framework | FastAPI, routers split per resource; OpenAPI at `/docs` | in use |
-| ORM | SQLAlchemy 2.0 — `AsyncSession` + `asyncpg` | M1 (sync `Session` + `psycopg` sync driver today) |
+| ORM | SQLAlchemy 2.0 — `AsyncSession` + `asyncpg` | ✅ async stack |
 | Validation | Pydantic v2 (`from_attributes`) | in use |
 | Auth | **PyJWT** (`HS256`) + bcrypt password hashing | PyJWT ✅ (since M1) |
-| Database | PostgreSQL 16 in Docker Compose, locally and when hosted | M1 (shared hosted instance today) |
+| Database | PostgreSQL 16 in Docker Compose, with a managed database optional for hosting | ✅ Compose for local development |
 | Migrations | Alembic as the only writer of DDL | ✅ (`create_all()` removed) |
-| Config | One `pydantic-settings` object reading `.env`, failing fast on missing secrets | M1 (`os.getenv` scattered today) |
-| NLP | Distilled summariser + sentiment, lazy-loaded, results persisted | M3 (`bart-large-cnn`, eager, at import today) |
-| Packaging | `pyproject.toml` + a single pinned requirements file (`uv` optional) | M1 (two `requirements.txt` files today) |
+| Config | One `pydantic-settings` object reading `.env`, failing fast on missing secrets | ✅ |
+| NLP | Distilled summariser + sentiment, lazy-loaded, results persisted | M3 (current pipelines are lazy-loaded; model/persistence work remains) |
+| Packaging | `pyproject.toml` + a single pinned requirements file (`uv` optional) | ✅ |
 | Server | Uvicorn | in use |
-| Containers | Docker + Docker Compose (`db`, `api`, `web`, eventually `inference`) | M1 |
+| Containers | Docker + Docker Compose (`db`, `api`, `web`; inference planned for M3) | ✅ |
 
 **Frontend**
 
@@ -289,7 +288,7 @@ uvicorn chat_backend.main:app --reload --port 8000
 ```
 
 Interactive docs: <http://127.0.0.1:8000/docs> (click **Authorize** and paste the token from
-`POST /users/login`). Database check: `curl http://127.0.0.1:8000/test-db`.
+`POST /users/login`). Readiness check: `curl http://127.0.0.1:8000/health/ready`.
 
 **3. Frontend**
 
@@ -331,8 +330,8 @@ deploy. It is done when all of the following are true:
 - [x] Register → login → send a message → see it in the feed works in the browser.
 - [x] Every read is scoped to the authenticated user (no global message list, no global
       daily summary).
-- [x] The schema is produced by Alembic alone; `alembic upgrade head` succeeds against an
-      empty database and `create_all()` no longer runs.
+- [x] The schema is produced by Alembic alone in application startup; `alembic upgrade head`
+      succeeds against an empty database and application code does not call `create_all()`.
 - [x] The API refuses to start without `SECRET_KEY`, and token lifetime comes from config.
 - [x] One pinned dependency list installs a working environment from scratch.
 - [x] `pytest` covers auth, message ownership, `/users/me` and the analytics scoping rule,
@@ -346,9 +345,9 @@ deploy. It is done when all of the following are true:
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | – | Async SQLAlchemy URL for PostgreSQL, e.g. `postgresql+asyncpg://…` (M1). |
 | `DATABASE_URL_SYNC` | no | derived from `DATABASE_URL` | Sync URL (`postgresql+psycopg://…`) used only by Alembic, which runs migrations outside the async engine (M1). |
-| `SECRET_KEY` | yes | – | HMAC key used to sign JWTs. M1 removes the insecure `supersecret` fallback so a missing value fails fast. |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Token lifetime. Declared in `.env` today but ignored by the code — M1 reads it through the settings object. |
-| `DEBUG` | no | `false` | Enables SQL echo and the verbose `/test-db` diagnostics (M1). |
+| `SECRET_KEY` | yes | – | HMAC key used to sign JWTs. There is no insecure fallback; startup fails when it is missing. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Token lifetime, read through the settings object. |
+| `DEBUG` | no | `false` | Reserved for local diagnostics; it does not expose the removed `/test-db` route. |
 | `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (M3, replaces `facebook/bart-large-cnn`). |
 | `AI_INFERENCE_URL` | no | – | Base URL of a separate inference service (M3) — only relevant once the packaging decision (U4) is settled. |
 | `VITE_DEV_API_TARGET` | no | `http://127.0.0.1:8000` | Optional Vite dev-proxy target for the API. The browser still uses same-origin relative URLs. |
@@ -398,9 +397,10 @@ alembic revision --autogenerate -m "add x"        # after changing models.py
 ```
 
 **How the schema is managed:** Alembic is the only thing that writes DDL. The revision
-`06c1b9c7b0ec` is a true `op.create_table(...)` initial migration, `create_all()` no longer
-runs anywhere, and `alembic upgrade head` succeeds against an empty database — verified
-against a fresh PostgreSQL 16 container, which is also what the test suite runs on.
+`06c1b9c7b0ec` is a true `op.create_table(...)` initial migration, application startup does not
+call `create_all()` (the test-only schema fixture may), and `alembic upgrade head` succeeds
+against an empty database — verified against a fresh PostgreSQL 16 container, which is also what
+the test suite runs on.
 
 > **Note for the existing development database.** Because that database already had the
 > tables (from the old `create_all()` era), stamp it once instead of upgrading:
@@ -501,37 +501,35 @@ Two things change in M1/M2 here:
 
 | Method | Path | Auth | Request | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/analytics/sentiment` | Bearer | query parameter `text` | `{ "label": "POSITIVE"\|"NEGATIVE", "score": float }` |
+| `POST` | `/analytics/sentiment` | Bearer | JSON body `{ "text": "..." }` (max 4,000 characters) | `{ "label": "POSITIVE"\|"NEGATIVE", "score": float }` |
 | `GET` | `/analytics/daily` | Bearer | – | `{ "date": "YYYY-MM-DD", "summary": str }` |
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/analytics/sentiment?text=I%20love%20this" \
-  -H "Authorization: Bearer $TOKEN"
+curl -X POST "http://127.0.0.1:8000/analytics/sentiment" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"text":"I love this"}'
 # -> {"label": "POSITIVE", "score": 0.9998}
 
 curl http://127.0.0.1:8000/analytics/daily -H "Authorization: Bearer $TOKEN"
 # -> {"date": "2026-02-11", "summary": "..."}
 ```
 
-Scheduled changes (M1/M3):
+Current analytics behavior:
 
-- Sentiment takes its text as a **query parameter** today; M1 moves it into a JSON body
-  (gap **B4**).
-- `/analytics/daily` is not user-scoped — it currently summarises *everyone's* messages for
-  the day. Scoping it is M1 (gap **S3**); the summarisation quality work (chunking, distilled
-  model, persisted scores) is M3 (gaps **A1/A2/D7**).
-- The first analytics request after a restart is slow because `ai_utils` loads the models at
-  import time; M3 makes loading lazy and keeps the API bootable without them (gap **B5/A6**).
+- Sentiment accepts a JSON body with a bounded `text` field; `/analytics/daily` is scoped to
+  the authenticated user and uses a half-open UTC day range. The remaining M3 work is
+  summarisation quality and persisted scores (gaps **A1/A2/D7**).
 
 ### Utility
 
 | Method | Path | Auth | Response |
 | --- | --- | --- | --- |
 | `GET` | `/` | – | `{ "message": "Welcome to Chat Analyzer API with AI!" }` |
-| `GET` | `/test-db` | – | `{ "db_result": 1 }` — proves the app can reach PostgreSQL |
+| `GET` | `/health` | – | `{ "status": "ok" }` |
+| `GET` | `/health/ready` | – | `{ "status": "ok", "database": "up" }` or `503` when the database is unavailable |
 
-M1 replaces `/test-db` with a proper `/health` (liveness) and `/health/ready` (database plus
-model readiness) pair, and hides the verbose diagnostics behind `DEBUG` (gaps **B8**, **O5**).
+`/health` and `/health/ready` are the supported liveness/readiness probes; the public `/test-db`
+  diagnostic has been removed (gaps **B8**, **O5**).
 
 ## WebSocket protocol
 
@@ -609,7 +607,7 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 19 passing (needs a Postgres; see below) |
+| Backend tests | `py -m pytest` | ✅ 22 passing (needs a Postgres; see below) |
 | Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | 🔨 M1 (T3) |
@@ -651,10 +649,11 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | ~~Fix `/users/me` and the `get_current_user` contract~~ ✅ | B2 |
 | Replace `python-jose` with `PyJWT` ✅; add `iat`/`jti` | B14 ✅, S7 |
 | ~~Alembic as the only schema owner; real initial migration; remove `create_all()`~~ ✅ | D1, D2, B9, D11 |
+| ~~Message response models and bounded input~~ ✅ | B3 |
 | ~~One settings object; fail fast without `SECRET_KEY`~~ ✅; honour `iat`/`jti` later | B6 ✅, S5 🟡 |
 | ~~One pinned dependency list + `pyproject.toml` + `ruff`~~ ✅; `mypy` still open | D8, T3 🟡, T4, A5 |
 | Docker + Compose (`db`, `api`, `web`) with migrations on start ✅ | O13 ✅ |
-| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (19 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
+| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (22 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
 | ~~`/health` + `/health/ready`; retire the public `/test-db` diagnostics~~ ✅ | B8 ✅, O5 🟡 |
 
 **M2 — Realtime as a first-class channel**
