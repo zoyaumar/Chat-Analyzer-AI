@@ -30,7 +30,7 @@ hard-coded in `src/api.ts` (`VITE_API_URL` is not read yet, see gap **F2** in
 
 ```
 src/
-├── api.ts                  # axios instance, request interceptor, endpoint wrappers, WS connector
+├── api.ts                  # axios client + request interceptor, endpoint wrappers, WS connector (fetch in M2 — Q27/F14)
 ├── types.ts                # User, Message, TokenResponse, SentimentResult, SummaryResult
 ├── App.tsx                 # BrowserRouter route table
 ├── main.tsx                # React root

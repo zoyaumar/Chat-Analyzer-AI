@@ -67,18 +67,18 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Area | Feature | Status | Milestone |
 | --- | --- | --- | --- |
 | Auth | Registration with bcrypt-hashed passwords | ✅ | — |
-| Auth | Login → signed JWT (`HS256`, configurable lifetime) | ✅ | lifetime wiring in M1 |
+| Auth | Login → signed JWT (HS256, `PyJWT`, configurable lifetime) | ✅ | lifetime wiring in M1 |
 | Auth | Bearer-token guard on protected endpoints | ✅ | — |
 | Auth | `GET /users/me` profile lookup | 🟡 returns a user id, not a `UserOut` payload | M1 |
 | Auth | Refresh tokens + server-side logout | 🔨 | M4 |
 | Chat | Send a message (REST, persisted) | 🟡 API works; the UI composer is currently a no-op | M1 |
 | Chat | List messages | 🟡 global list, not scoped per user; no pagination in the UI | M1 |
 | Chat | Delete your own message | 🟡 API only, no UI control | M2 |
-| Chat | Realtime delivery | 🟡 echo endpoint only: no auth, no persistence, no fan-out | M2 |
+| Chat | Realtime delivery | 🟡 echo endpoint only: no auth, no persistence, no fan-out — **deliberately kept and finished in M2** | M2 |
 | Analytics | Sentiment analysis | 🟡 works, but the model loads at import and results are not stored | M3 |
 | Analytics | Daily summary | 🟡 summarises all users; UTC-boundary caveat | M1/M3 |
 | Data | Alembic as the single schema owner | 🔨 an alter-style revision plus `create_all()` today | M1 |
-| Data | Async database access (`asyncpg` + `AsyncSession`) | 🔨 sync `Session` + `psycopg2` today | M1 |
+| Data | Async database access (`asyncpg` + `AsyncSession`) | 🔨 sync `Session` + sync driver today | M1 |
 | Frontend | Login / register / chat / analytics screens, routing, logout | ✅ | — |
 | Frontend | Single-origin API access (no CORS, no hard-coded URLs) | 🔨 | M1 |
 | Frontend | Protected routes + 401 handling and expiry UX | 🔨 | M2 |
@@ -157,10 +157,10 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Concern | Choice | Status |
 | --- | --- | --- |
 | Framework | FastAPI, routers split per resource; OpenAPI at `/docs` | in use |
-| ORM | SQLAlchemy 2.0 — `AsyncSession` + `asyncpg` | M1 (sync `Session` + `psycopg2` today) |
+| ORM | SQLAlchemy 2.0 — `AsyncSession` + `asyncpg` | M1 (sync `Session` + `psycopg` sync driver today) |
 | Validation | Pydantic v2 (`from_attributes`) | in use |
 | Auth | **PyJWT** (`HS256`) + bcrypt password hashing | PyJWT in M1 (`python-jose` today) |
-| Database | PostgreSQL 16 — Docker Compose locally, managed instance when hosted | in use |
+| Database | PostgreSQL 16 in Docker Compose, locally and when hosted | M1 (shared hosted instance today) |
 | Migrations | Alembic as the only writer of DDL | M1 (`create_all()` also runs today) |
 | Config | One `pydantic-settings` object reading `.env`, failing fast on missing secrets | M1 (`os.getenv` scattered today) |
 | NLP | Distilled summariser + sentiment, lazy-loaded, results persisted | M3 (`bart-large-cnn`, eager, at import today) |
@@ -266,7 +266,7 @@ The compose stack is planned as:
 | Python | 3.11+ (verified on 3.11.0) |
 | Node.js | 20+ (verified on 22.13) |
 | npm | 10+ |
-| PostgreSQL | any reachable instance — a free Supabase project is what this repo currently points at |
+| PostgreSQL | any reachable instance — a local container (Compose `db` service) in M1, or a hosted instance such as Supabase |
 
 **1. Configure**
 
@@ -343,19 +343,19 @@ deploy. It is done when all of the following are true:
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | – | Async SQLAlchemy URL for PostgreSQL, e.g. `postgresql+asyncpg://…` (M1). |
-| `DATABASE_URL_SYNC` | no | derived from `DATABASE_URL` | Sync URL (`postgresql+psycopg2://…`) used only by Alembic, which runs migrations outside the async engine (M1). |
+| `DATABASE_URL_SYNC` | no | derived from `DATABASE_URL` | Sync URL (`postgresql+psycopg://…`) used only by Alembic, which runs migrations outside the async engine (M1). |
 | `SECRET_KEY` | yes | – | HMAC key used to sign JWTs. M1 removes the insecure `supersecret` fallback so a missing value fails fast. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Token lifetime. Declared in `.env` today but ignored by the code — M1 reads it through the settings object. |
 | `DEBUG` | no | `false` | Enables SQL echo and the verbose `/test-db` diagnostics (M1). |
 | `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (M3, replaces `facebook/bart-large-cnn`). |
-| `AI_INFERENCE_URL` | no | – | Base URL of a separate inference service (M3) — only relevant once the packaging decision below is settled. |
+| `AI_INFERENCE_URL` | no | – | Base URL of a separate inference service (M3) — only relevant once the packaging decision (U4) is settled. |
 | `VITE_API_URL` | no | – | Optional API base URL for the SPA. The dev proxy and the same-origin build mean you normally do not need it (M1). |
 
 Example `.env` for the Docker stack:
 
 ```dotenv
 DATABASE_URL=postgresql+asyncpg://app:app@db:5432/chat_analyzer
-DATABASE_URL_SYNC=postgresql+psycopg2://app:app@db:5432/chat_analyzer
+DATABASE_URL_SYNC=postgresql+psycopg://app:app@db:5432/chat_analyzer
 SECRET_KEY=replace-with-a-long-random-string
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
@@ -365,7 +365,7 @@ parameters — `asyncpg` takes `ssl=require` in the URL, not a `connect_args` di
 
 ```dotenv
 DATABASE_URL=postgresql+asyncpg://postgres.<project-ref>:<password>@<region>.pooler.supabase.com:5432/postgres?ssl=require
-DATABASE_URL_SYNC=postgresql+psycopg2://postgres.<project-ref>:<password>@<region>.pooler.supabase.com:5432/postgres?sslmode=require
+DATABASE_URL_SYNC=postgresql+psycopg://postgres.<project-ref>:<password>@<region>.pooler.supabase.com:5432/postgres?sslmode=require
 SECRET_KEY=replace-with-a-long-random-string
 ```
 
@@ -580,10 +580,8 @@ Target protocol once M2 lands:
 ## Deployment
 
 Containers are the deployment unit. The repo intentionally does **not** ship a
-platform-specific blueprint any more: the previous `render.yaml` pointed at a module path that
-does not exist and installed an incomplete dependency list, and pinning the project to one
-provider's YAML was more friction than value (see `docs/DESIGN_DECISIONS.md` Q32/Q41). A
-Docker image is a portable contract — the same artefact runs locally, in CI and on any host.
+platform-specific blueprint: a Docker image is a portable contract — the same artefact runs
+locally, in CI and on any host (see `docs/DESIGN_DECISIONS.md` Q32/Q41).
 
 Planned deployment shape (M1):
 
@@ -598,14 +596,13 @@ Requirements for any host:
 | Requirement | Notes |
 | --- | --- |
 | PostgreSQL 16 (or a managed equivalent) | Only the API talks to it; `DATABASE_URL_SYNC` is used by migrations. |
-| `SECRET_KEY` | Injected as a secret; the app refuses to start without it (M1). |
+| `SECRET_KEY` | Injected as a secret; never generated per deploy (so rolling out a new build must not log every user out). The app refuses to start without it (M1). |
 | Environment variables | See [Environment variables](#environment-variables); nothing is baked into the image. |
 | TLS termination | Any reverse proxy or load balancer; the API itself speaks plain HTTP. |
 | Health probes | `/health` (liveness) and `/health/ready` (database + model readiness) in M1. |
 | Persistent volume | Only if the NLP model cache lives in the container (M3 packaging decision). |
 
-With the free-tier PaaS path gone for now, a single small VPS or any container host with
-Compose installed is enough: `docker compose up -d --build`.
+Any small VPS or container host with Compose installed is enough: `docker compose up -d --build`.
 
 ## Testing & code quality
 
