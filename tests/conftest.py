@@ -1,7 +1,9 @@
 """Shared fixtures: a throwaway PostgreSQL schema per test session.
 
-Set TEST_DATABASE_URL to point at a disposable database, e.g.:
-    postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/chat_test
+The database is resolved in this order:
+  1. `TEST_DATABASE_URL`, if you set one;
+  2. an already-exported `DATABASE_URL` (what CI provides);
+  3. a local disposable container on port 5433 (see the root README).
 """
 import os
 
@@ -9,10 +11,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-# Must be set before chat_backend.config is imported anywhere.
-os.environ.setdefault(
-    "TEST_DATABASE_URL", "postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/chat_test"
+_default_url = os.environ.get("DATABASE_URL") or (
+    "postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/chat_test"
 )
+# Must be set before chat_backend.config is imported anywhere.
+os.environ.setdefault("TEST_DATABASE_URL", _default_url)
 os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 # >= 32 bytes keeps PyJWT quiet (RFC 7518 HMAC key length).
 os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789-0123456789")

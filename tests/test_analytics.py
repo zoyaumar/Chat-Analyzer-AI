@@ -9,11 +9,17 @@ async def test_analytics_sentiment(client: AsyncClient, user_and_token):
     with patch("chat_backend.routes.analytics.analyze_sentiment", return_value=fake):
         resp = await client.post(
             "/analytics/sentiment",
-            params={"text": "I love this"},
+            json={"text": "I love this"},
             headers={"Authorization": f"Bearer {token}"},
         )
     assert resp.status_code == 200
     assert resp.json() == fake
+
+
+async def test_analytics_sentiment_requires_token(client: AsyncClient):
+    assert (
+        await client.post("/analytics/sentiment", json={"text": "hi"})
+    ).status_code == 401
 
 
 async def test_daily_summary_scoped_to_user(client: AsyncClient):

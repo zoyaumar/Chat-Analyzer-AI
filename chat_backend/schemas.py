@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ======================
@@ -53,3 +53,10 @@ class MessageOut(MessageBase):
 
 class MessageWithUser(MessageOut):
     user: UserOut
+
+
+# ======================
+# Analytics
+# ======================
+class SentimentRequest(BaseModel):
+    text: str = Field(max_length=4000)

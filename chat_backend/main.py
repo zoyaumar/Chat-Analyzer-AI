@@ -1,7 +1,7 @@
 import logging
 
-from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,15 +14,8 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Single origin in development (Vite proxies to FastAPI); the CORS middleware is
-# removed entirely once the single-origin build lands (gap S4/F15).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware: the app is same-origin everywhere — Vite proxies in
+# development, nginx in production (gaps S4/F15, Q34).
 
 app.include_router(users.router)
 app.include_router(messages.router)
@@ -32,12 +25,32 @@ app.include_router(websocket.router)
 logger = logging.getLogger("uvicorn.error")
 
 
-@app.get("/test-db")
-async def test_db(db: AsyncSession = Depends(get_db)):
-    result = (await db.execute(text("SELECT 1"))).scalar()
-    return {"db_result": result}
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Log the full traceback server-side; never leak details to clients (gap B11)."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+@app.get("/health")
+async def health() -> dict:
+    """Liveness: the process is up and serving requests."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def readiness(db: AsyncSession = Depends(get_db)) -> JSONResponse:
+    """Readiness: the database answers `SELECT 1`."""
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("Readiness check failed: database unreachable")
+        return JSONResponse(
+            status_code=503, content={"status": "unavailable", "database": "down"}
+        )
+    return {"status": "ok", "database": "up"}
 
 
 @app.get("/")
-async def read_root():
+async def read_root() -> dict:
     return {"message": "Welcome to Chat Analyzer API with AI!"}

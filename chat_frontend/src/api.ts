@@ -1,7 +1,9 @@
 import axios from "axios";
 import type { TokenResponse, Message, SentimentResult, SummaryResult } from "./types";
 
-const API = axios.create({ baseURL: "http://127.0.0.1:8000/" });
+// Same-origin: dev traffic goes through the Vite proxy, production through nginx
+// or the static mount (docs/DESIGN_DECISIONS.md Q34).
+const API = axios.create({ baseURL: "/" });
 
 // Attach JWT if available
 API.interceptors.request.use((req) => {
@@ -30,7 +32,7 @@ export const sendMessage = (data: { text: string }) =>
 
 // --- Analytics ---
 export const analyzeSentiment = (text: string) =>
-  API.post<SentimentResult>("/analytics/sentiment", null, { params: { text } });
+  API.post<SentimentResult>("/analytics/sentiment", { text });
 
 export const getDailySummary = () => API.get<SummaryResult>("/analytics/daily");
 
@@ -38,7 +40,9 @@ export function connectWebSocket(
   onMessage: (msg: Message) => void,
   token: string
 ): WebSocket {
-  const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat?token=${token}`);
+  const ws = new WebSocket(
+    `${location.origin.replace(/^http/, "ws")}/ws/chat?token=${token}`
+  );
 
   ws.onmessage = (event) => {
     let data: unknown;

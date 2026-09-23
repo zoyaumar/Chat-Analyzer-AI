@@ -178,7 +178,7 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Routing | React Router 7 (`BrowserRouter`) | in use |
 | HTTP | native `fetch` behind a thin typed client | M2 (axios today) |
 | Server state | TanStack Query — caching, retries, invalidation, loading/error state | M2 (`useEffect` + `useState` today) |
-| Same-origin access | Vite dev proxy + FastAPI static mount in production | M1 (hard-coded URLs today) |
+| Same-origin access | Vite dev proxy + nginx `web` container in production | in place (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
 | Tests | Vitest + React Testing Library + MSW | M2 |
@@ -203,7 +203,7 @@ Chat-Analyzer-AI/
 │       └── 06c1b9c7b0ec_...py     # alter-style today; replaced by a true initial migration in M1
 ├── alembic.ini
 ├── chat_backend/                  # FastAPI application package
-│   ├── main.py                    # app setup, router registration, SPA static mount (M1)
+│   ├── main.py                    # app setup, router registration, health endpoints
 │   ├── config.py                  # M1 — pydantic-settings: one place for every env var
 │   ├── database.py                # async engine, AsyncSession factory, get_db dependency
 │   ├── models.py                  # User, Message ORM models
@@ -257,7 +257,7 @@ The compose stack is planned as:
 | `web` | `docker/web.Dockerfile` | builds the SPA and serves it on the same origin |
 | `inference` | `docker/inference.Dockerfile` | M3, only if NLP moves out of the API process |
 
-### Option B — run it manually (works today)
+### Option B — run the two halves directly (no Docker)
 
 **Prerequisites**
 
@@ -642,7 +642,7 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | Work | Gaps |
 | --- | --- |
 | ~~Migrate to async SQLAlchemy (`asyncpg`, `AsyncSession`, async `get_db`)~~ ✅ | B13 |
-| Single origin: Vite dev proxy + FastAPI static mount; drop the CORS wildcard | S4, F2, F15 |
+| ~~Single origin: Vite dev proxy + nginx `web` container; CORS wildcard removed~~ ✅ | S4, F2, F15 |
 | ~~Fix the composer so Send actually posts~~ ✅ | F1 |
 | ~~Scope messages and the daily summary to the authenticated user~~ ✅ | S2, S3 |
 | ~~Fix `/users/me` and the `get_current_user` contract~~ ✅ | B2 |

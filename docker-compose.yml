@@ -1,0 +1,48 @@
+# Option A (three services): db + api + web.
+# The browser talks only to `web` (nginx), which serves the SPA and proxies
+# API/WebSocket traffic to `api` — single origin (docs/DESIGN_DECISIONS.md Q34/Q41).
+#
+# Usage:
+#   cp .env.example .env   # set SECRET_KEY
+#   docker compose up --build
+#   http://localhost:8080
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+      POSTGRES_DB: chat_analyzer
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat_analyzer"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://chat:chat@db:5432/chat_analyzer
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env (see .env.example)}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Not published: only `web` reaches it, on the Compose network.
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
