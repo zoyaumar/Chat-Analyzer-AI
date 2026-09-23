@@ -71,12 +71,12 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Auth | Bearer-token guard on protected endpoints | ✅ | — |
 | Auth | `GET /users/me` profile lookup | 🟡 returns a user id, not a `UserOut` payload | M1 |
 | Auth | Refresh tokens + server-side logout | 🔨 | M4 |
-| Chat | Send a message (REST, persisted) | 🟡 API works; the UI composer is currently a no-op | M1 |
-| Chat | List messages | 🟡 global list, not scoped per user; no pagination in the UI | M1 |
+| Chat | Send a message (REST, persisted) | ✅ | — |
+| Chat | List messages | ✅ auth-required and scoped to the sender; no pagination in the UI yet | pagination in M1 (B10) |
 | Chat | Delete your own message | 🟡 API only, no UI control | M2 |
-| Chat | Realtime delivery | 🟡 echo endpoint only: no auth, no persistence, no fan-out — **deliberately kept and finished in M2** | M2 |
+| Chat | Realtime delivery | 🟡 authenticated JSON echo only: no persistence, no fan-out — **deliberately kept and finished in M2** | M2 |
 | Analytics | Sentiment analysis | 🟡 works, but the model loads at import and results are not stored | M3 |
-| Analytics | Daily summary | 🟡 summarises all users; UTC-boundary caveat | M1/M3 |
+| Analytics | Daily summary | 🟡 scoped to the authenticated user; UTC-boundary caveat | M3 (quality work) |
 | Data | Alembic as the single schema owner | 🔨 an alter-style revision plus `create_all()` today | M1 |
 | Data | Async database access (`asyncpg` + `AsyncSession`) | 🔨 sync `Session` + sync driver today | M1 |
 | Frontend | Login / register / chat / analytics screens, routing, logout | ✅ | — |
@@ -299,9 +299,8 @@ npm run dev
 Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you land on
 `/chat`.
 
-> **Known rough edges in the manual path** (all tracked in the gaps document): the composer
-> does not send yet (F1), `GET /messages/` is not user-scoped (S2), and `api.ts` still points
-> at a hard-coded `http://127.0.0.1:8000`. The M1 work removes all three.
+> **Known rough edges in the manual path** (all tracked in the gaps document): `api.ts`
+> still points at a hard-coded `http://127.0.0.1:8000` (F2). M1 removes it.
 
 ### Useful commands
 
@@ -462,7 +461,7 @@ revocation list becomes possible later (gaps S7/Q9).
 | Method | Path | Auth | Request | Response |
 | --- | --- | --- | --- | --- |
 | `POST` | `/messages/` | Bearer | JSON `{ "text": str }` — the sender comes from the token | `Message` |
-| `GET` | `/messages/` | Bearer (M1; public today) | query `skip`, `limit` | `[Message]` |
+| `GET` | `/messages/` | Bearer | query `skip`, `limit` | `[Message]` |
 | `DELETE` | `/messages/{message_id}` | Bearer | – | `{ "detail": "Message deleted" }` |
 
 `Message` payload:
@@ -491,8 +490,8 @@ when deleting someone else's message.
 
 Two things change in M1/M2 here:
 
-- `GET /messages/` gains the bearer requirement and a `user_id` filter — today it returns
-  **every** user's messages to anyone (gaps **S2**, **B10**).
+- `GET /messages/` requires the bearer token and returns only the calling user's messages.
+  Still pending: keyset pagination (gap **B10**).
 - The routes declare response models (`MessageOut`), so the contract shows up in OpenAPI
   instead of depending on ORM serialisation (gap **B3**), and the client stops sending a
   `user_id` that the API ignores.
@@ -550,14 +549,12 @@ ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token }));
 
 Where it stands today, stated plainly:
 
-- ✅ A connection is accepted and text frames are echoed back — enough to prove the transport.
-- ⬜ The JWT check exists only as commented-out code, so the socket is effectively public
-  (gap **S1**).
+- ✅ The handshake validates the JWT — a missing or invalid token closes the socket (1008).
+- ✅ The server replies with JSON and the client parses defensively, ignoring frames that are
+  not `Message`-shaped (gaps **S1**, **F3**).
 - ⬜ Messages are neither persisted nor broadcast (`ConnectionManager.broadcast` is defined but
   unused), so it is not yet a chat channel (gap **B1**).
-- ⬜ The server sends plain text while the client runs `JSON.parse(event.data)`, which throws
-  on every frame (gap **F3**).
-- ⬜ The token currently travels in the query string (`?token=`), which puts a credential in
+- ⬜ The token travels in the query string (`?token=`), which puts a credential in
   access logs and browser history (gap **S8**).
 
 **This endpoint is deliberately kept, not deleted** — realtime delivery is a first-class part

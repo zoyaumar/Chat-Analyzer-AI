@@ -22,7 +22,8 @@ def daily_summary(
 ):
     today = datetime.utcnow().date()
     messages = db.query(models.Message).filter(
-        models.Message.timestamp >= today
+        models.Message.timestamp >= today,
+        models.Message.user_id == current_user,
     ).all()
 
     if not messages:

@@ -1,12 +1,12 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from jose import jwt, JWTError
+import json
 from typing import List
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from jose import JWTError, jwt
 
 from chat_backend.auth_utils import ALGORITHM, SECRET_KEY
 
 router = APIRouter()
 
-# Manage connections
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -27,47 +27,26 @@ manager = ConnectionManager()
 
 @router.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
-    # token = websocket.query_params.get("token")
-    # print("Token received:", token)
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008)
+        return
 
-    # if not token:
-    #     await websocket.close(code=1008)
-    #     return
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        await websocket.close(code=1008)
+        return
+    if payload.get("sub") is None:
+        await websocket.close(code=1008)
+        return
 
-    # try:
-    #     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])    
-    #     print("Decoded payload:", payload)
-
-    #     user_id = payload.get("sub")
-    #     if not user_id:
-    #         print("⚠️ No user_id in token")
-    #         await websocket.close(code=1008)
-    #         return
-    # except JWTError as e:
-    #     print(f"⚠️ JWT error: {e}")
-    #     await websocket.close(code=1008)
-    #     return
-
-    # await manager.connect(websocket)
-    # print(f"✅ WebSocket connected: user {user_id}")
-
-    # try:
-    #     while True:
-    #         data = await websocket.receive_text()
-    #         print(f"Message from {user_id}: {data}")
-    #         await manager.broadcast(f"{user_id}: {data}")
-    # except WebSocketDisconnect:
-    #     manager.disconnect(websocket)
-    #     print(f"❌ WebSocket disconnected: user {user_id}")
-
-
-    await websocket.accept()
-    print("✅ WebSocket connected")
-
+    await manager.connect(websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            print("Got:", data)
-            await websocket.send_text(f"You said: {data}")
+            # Echo only (persistence + broadcast land with gap B1); reply with JSON
+            # so the client's JSON.parse never throws (gap F3).
+            await websocket.send_text(json.dumps({"text": data}))
     except WebSocketDisconnect:
-        print("❌ WebSocket disconnected")
+        manager.disconnect(websocket)

@@ -25,7 +25,7 @@ export const loginUser = (data: { username: string; password: string }) =>
 
 // --- Messages ---
 export const getMessages = () => API.get<Message[]>("/messages/");
-export const sendMessage = (data: { text: string; user_id: number }) =>
+export const sendMessage = (data: { text: string }) =>
   API.post<Message>("/messages/", data);
 
 // --- Analytics ---
@@ -41,8 +41,17 @@ export function connectWebSocket(
   const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat?token=${token}`);
 
   ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    onMessage(data);
+    let data: unknown;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return; // ignore malformed frames
+    }
+    // Only accept frames shaped like a Message; ignore echoes/prototyping frames.
+    const m = data as Partial<Message>;
+    if (typeof m.id === "number" && typeof m.text === "string") {
+      onMessage(m as Message);
+    }
   };
 
   return ws;

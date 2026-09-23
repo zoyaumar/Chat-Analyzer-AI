@@ -6,7 +6,6 @@ import { jwtDecode } from "jwt-decode";
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [text, setText] = useState("");
   const [input, setInput] = useState("");
   const ws = useRef<WebSocket | null>(null);
   const [currentUser, setCurrentUser] = useState({ id: 1 }); // Placeholder for current user
@@ -17,14 +16,12 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    // fetchMessages();
     const token = localStorage.getItem("token");
     if (token) {
       try {
         const decoded: DecodedToken = jwtDecode(token);
         setCurrentUser({ id: Number(decoded.sub) });
 
-        // connect websocket with token in query string
         ws.current = connectWebSocket(
           (msg) => setMessages((prev) => [...prev, msg]),
           token
@@ -47,23 +44,10 @@ export default function Chat() {
     };
   }, []);
 
-
-
-  // const fetchMessages = async () => {
-  //   const res = await getMessages();
-  //   setMessages(res.data);
-  // };
-
-  // const handleSend = async () => {
-  //   await sendMessage({ text, user_id: 1 }); // later, derive from JWT
-  //   setText("");
-  //   fetchMessages();
-  // };
   const handleSend = async () => {
     if (!input.trim()) return;
-    const messagePayload = { text: input, user_id: currentUser.id };
-    await sendMessage(messagePayload);
-    ws.current?.send(JSON.stringify(messagePayload));
+    const res = await sendMessage({ text: input });
+    setMessages((prev) => [...prev, res.data]);
     setInput("");
   };
 
@@ -75,14 +59,14 @@ export default function Chat() {
         <div className="border p-2 h-64 overflow-y-scroll mb-4">
           {messages.map((m) => (
             <div key={m.id}>
-              <b>User {m.user_id}:</b> {m.text}
+              <b>{m.user_id === currentUser.id ? "You" : `User ${m.user_id}`}:</b> {m.text}
             </div>
           ))}
         </div>
         <input
           className="border p-2 w-3/4"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
         />
         <button
           onClick={handleSend}
