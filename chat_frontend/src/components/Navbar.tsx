@@ -1,12 +1,8 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { useAuth } from "../auth/useAuth";
 
 export default function Navbar() {
-  const navigate = useNavigate();
-
-  const logout = () => {
-    localStorage.removeItem("token");
-    navigate("/login");
-  };
+  const { signOut } = useAuth();
 
   return (
     <nav className="bg-blue-600 text-white p-4 flex justify-between">
@@ -14,7 +10,10 @@ export default function Navbar() {
         <Link to="/chat">Chat</Link>
         <Link to="/analytics">Analytics</Link>
       </div>
-      <button onClick={logout} className="bg-red-500 px-3 py-1 rounded">
+      <button
+        onClick={signOut}
+        className="bg-red-500 px-3 py-1 rounded"
+      >
         Logout
       </button>
     </nav>

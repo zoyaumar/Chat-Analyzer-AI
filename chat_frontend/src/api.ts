@@ -1,29 +1,44 @@
-import axios from "axios";
+import axios, { type AxiosError } from "axios";
 import type { TokenResponse, Message, SentimentResult, SummaryResult } from "./types";
 
-// Same-origin: dev traffic goes through the Vite proxy, production through nginx
-// or the static mount (docs/DESIGN_DECISIONS.md Q34).
+type UnauthorizedHandler = () => void;
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler;
+}
+
+// Same-origin: dev traffic goes through the Vite proxy; production through nginx.
 const API = axios.create({ baseURL: "/" });
 
-// Attach JWT if available
-API.interceptors.request.use((req) => {
+API.interceptors.request.use((request) => {
   const token = localStorage.getItem("token");
-  if (token && req.headers) {
-    req.headers.Authorization = `Bearer ${token}`;
+  if (token) {
+    request.headers.Authorization = `Bearer ${token}`;
   }
-  return req;
+  return request;
 });
+
+API.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    const isLoginRequest = error.config?.url === "/users/login";
+    if (error.response?.status === 401 && !isLoginRequest) {
+      unauthorizedHandler?.();
+    }
+    return Promise.reject(error);
+  }
+);
 
 // --- Auth ---
 export const registerUser = (data: { username: string; password: string }) =>
   API.post("/users/register", data);
 
 export const loginUser = (data: { username: string; password: string }) =>
-  API.post<TokenResponse>(
-    "/users/login",
-    new URLSearchParams(data),
-    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-  );
+  API.post<TokenResponse>("/users/login", new URLSearchParams(data), {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
 
 // --- Messages ---
 export const getMessages = () => API.get<Message[]>("/messages/");
@@ -41,7 +56,7 @@ export function connectWebSocket(
   token: string
 ): WebSocket {
   const ws = new WebSocket(
-    `${location.origin.replace(/^http/, "ws")}/ws/chat?token=${token}`
+    `${location.origin.replace(/^http/, "ws")}/ws/chat?token=${encodeURIComponent(token)}`
   );
 
   ws.onmessage = (event) => {
@@ -49,17 +64,15 @@ export function connectWebSocket(
     try {
       data = JSON.parse(event.data);
     } catch {
-      return; // ignore malformed frames
+      return;
     }
-    // Only accept frames shaped like a Message; ignore echoes/prototyping frames.
-    const m = data as Partial<Message>;
-    if (typeof m.id === "number" && typeof m.text === "string") {
-      onMessage(m as Message);
+
+    const message = data as Partial<Message>;
+    if (typeof message.id === "number" && typeof message.text === "string") {
+      onMessage(message as Message);
     }
   };
 
   return ws;
 }
-
-
 

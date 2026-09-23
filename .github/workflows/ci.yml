@@ -58,5 +58,7 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+      - name: Test
+        run: npm test
       - name: Type-check + build
         run: npm run build

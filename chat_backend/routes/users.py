@@ -44,6 +44,7 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
     await db.refresh(new_user)
     return new_user
 
+
 @router.get("/me", response_model=schemas.UserOut)
 async def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user

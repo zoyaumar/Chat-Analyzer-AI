@@ -75,17 +75,17 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Chat | List messages | ✅ auth-required and scoped to the sender; no pagination in the UI yet | pagination in M1 (B10) |
 | Chat | Delete your own message | 🟡 API only, no UI control | M2 |
 | Chat | Realtime delivery | 🟡 authenticated JSON echo only: no persistence, no fan-out — **deliberately kept and finished in M2** | M2 |
-| Analytics | Sentiment analysis | 🟡 works, but the model loads at import and results are not stored | M3 |
+| Analytics | Sentiment analysis | 🟡 works with lazy model loading; results are not stored | M3 |
 | Analytics | Daily summary | 🟡 scoped to the authenticated user; UTC-boundary caveat | M3 (quality work) |
 | Data | Alembic as the single schema owner | ✅ real initial migration; `create_all()` removed | — |
-| Data | Async database access (`asyncpg` + `AsyncSession`) | 🔨 sync `Session` + sync driver today | M1 |
+| Data | Async database access (`asyncpg` + `AsyncSession`) | ✅ | — |
 | Frontend | Login / register / chat / analytics screens, routing, logout | ✅ | — |
-| Frontend | Single-origin API access (no CORS, no hard-coded URLs) | 🔨 | M1 |
-| Frontend | Protected routes + 401 handling and expiry UX | 🔨 | M2 |
+| Frontend | Single-origin API access (no CORS, no hard-coded URLs) | ✅ | — |
+| Frontend | Protected routes + 401 handling and expiry UX | ✅ | — |
 | Frontend | Loading, error and empty states | 🔨 | M2 |
-| Ops | Docker Compose stack (`db` + `api` + `web`) | 🔨 | M1 |
-| Ops | Backend tests (pytest + httpx) and frontend tests (Vitest) | 🔨 | M1/M2 |
-| Ops | CI on every push (lint, tests, migrations) | 🔨 | M1 |
+| Ops | Docker Compose stack (`db` + `api` + `web`) | ✅ | — |
+| Ops | Backend tests (pytest + httpx) and frontend tests (Vitest) | ✅ | — |
+| Ops | CI on every push (lint, tests, migrations) | ✅ | — |
 
 > Every 🟡 and 🔨 row is tracked individually — with file references, impact and the fix — in
 > [`docs/GAPS_AND_IMPROVEMENTS.md`](docs/GAPS_AND_IMPROVEMENTS.md). The reasoning behind each
@@ -97,7 +97,7 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 flowchart LR
     subgraph Browser["Browser - React 19 + Vite"]
         UI["Pages: Login / Register / Chat / Analytics"]
-        CL["api client - fetch + TanStack Query"]
+        CL["api client - axios + AuthProvider"]
         WSC["WebSocket client"]
     end
 
@@ -176,16 +176,17 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Build tool | Vite 7 (`@vitejs/plugin-react`) | in use |
 | Styling | Tailwind CSS 4 via the `@tailwindcss/vite` plugin | in use |
 | Routing | React Router 7 (`BrowserRouter`) | in use |
-| HTTP | native `fetch` behind a thin typed client | M2 (axios today) |
+| HTTP | axios client; migrate to native `fetch` in M2 | in use (Q27/F14) |
 | Server state | TanStack Query — caching, retries, invalidation, loading/error state | M2 (`useEffect` + `useState` today) |
 | Same-origin access | Vite dev proxy + nginx `web` container in production | in place (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
-| Tests | Vitest + React Testing Library + MSW | M2 |
+| Tests | Vitest + React Testing Library | in use (3 auth-guard tests) |
 
 ## Repository layout
 
-Entries marked **M1/M2/M3** do not exist yet — they are the structure this repo is moving to.
+Entries marked **M2/M3** are the structure this repo is moving toward; the M1 runtime,
+migration and container files are already present.
 
 ```
 Chat-Analyzer-AI/
@@ -221,7 +222,9 @@ Chat-Analyzer-AI/
 │   │   ├── api.ts                 # one origin, one client, typed helpers
 │   │   ├── queries/               # M2 — TanStack Query hooks
 │   │   ├── types.ts               # shared TypeScript interfaces (M2: generated from OpenAPI)
-│   │   ├── App.tsx                # route table (M2: wrapped in a RequireAuth guard)
+│   │   ├── App.tsx                # BrowserRouter + protected route table
+
+│   │   ├── auth/                 # AuthProvider, RequireAuth, token helpers
 │   │   ├── components/            # Navbar, MessageList (extracted from Chat.tsx in M2)
 │   │   └── pages/                 # Login, Register, Chat, Analytics
 │   ├── index.html
@@ -299,8 +302,8 @@ npm run dev
 Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you land on
 `/chat`.
 
-> **Known rough edges in the manual path** (all tracked in the gaps document): `api.ts`
-> still points at a hard-coded `http://127.0.0.1:8000` (F2). M1 removes it.
+> **Current frontend auth path:** the SPA uses the Vite proxy in development and nginx in
+> production; `AuthProvider` owns the token, guards private routes and handles expiry/401s.
 
 ### Useful commands
 
@@ -315,7 +318,7 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 | `npm run dev` | `chat_frontend/` | Vite dev server with HMR |
 | `npm run build` | `chat_frontend/` | type-check (`tsc -b`) + production bundle |
 | `npm run lint` | `chat_frontend/` | ESLint over the SPA |
-| `npm test` | `chat_frontend/` | Vitest suite (M2) |
+| `npm test` | `chat_frontend/` | Vitest suite (3 auth-guard tests) |
 | `py -m compileall chat_backend` | repo root | quick syntax check of the backend |
 
 ## Definition of shippable
@@ -323,19 +326,19 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 M1 is the milestone that makes this repository something a stranger can run, trust and
 deploy. It is done when all of the following are true:
 
-- [ ] `docker compose up` starts `db` + `api` + `web` from a clean clone, with migrations
+- [x] `docker compose up` starts `db` + `api` + `web` from a clean clone, with migrations
       applied automatically and no manual steps beyond `.env`.
-- [ ] Register → login → send a message → see it in the feed works in the browser.
-- [ ] Every read is scoped to the authenticated user (no global message list, no global
+- [x] Register → login → send a message → see it in the feed works in the browser.
+- [x] Every read is scoped to the authenticated user (no global message list, no global
       daily summary).
-- [ ] The schema is produced by Alembic alone; `alembic upgrade head` succeeds against an
+- [x] The schema is produced by Alembic alone; `alembic upgrade head` succeeds against an
       empty database and `create_all()` no longer runs.
-- [ ] The API refuses to start without `SECRET_KEY`, and token lifetime comes from config.
-- [ ] One pinned dependency list installs a working environment from scratch.
-- [ ] `pytest` covers auth, message ownership, `/users/me` and the analytics scoping rule,
+- [x] The API refuses to start without `SECRET_KEY`, and token lifetime comes from config.
+- [x] One pinned dependency list installs a working environment from scratch.
+- [x] `pytest` covers auth, message ownership, `/users/me` and the analytics scoping rule,
       and passes in CI.
-- [ ] `npm run lint && npm run build` pass in CI.
-- [ ] The README describes exactly what the code does — no aspirational setup steps.
+- [x] `npm run lint && npm run build` pass in CI.
+- [x] The README describes exactly what the code does — no aspirational setup steps.
 
 ## Environment variables
 
@@ -348,7 +351,7 @@ deploy. It is done when all of the following are true:
 | `DEBUG` | no | `false` | Enables SQL echo and the verbose `/test-db` diagnostics (M1). |
 | `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (M3, replaces `facebook/bart-large-cnn`). |
 | `AI_INFERENCE_URL` | no | – | Base URL of a separate inference service (M3) — only relevant once the packaging decision (U4) is settled. |
-| `VITE_API_URL` | no | – | Optional API base URL for the SPA. The dev proxy and the same-origin build mean you normally do not need it (M1). |
+| `VITE_DEV_API_TARGET` | no | `http://127.0.0.1:8000` | Optional Vite dev-proxy target for the API. The browser still uses same-origin relative URLs. |
 
 Example `.env` for the Docker stack:
 
@@ -606,12 +609,12 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 15 passing (needs a Postgres; see below) |
+| Backend tests | `py -m pytest` | ✅ 19 passing (needs a Postgres; see below) |
 | Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | 🔨 M1 (T3) |
-| Frontend tests | `cd chat_frontend && npm test` | 🔨 M2 |
-| CI (all of the above on every push) | GitHub Actions | 🔨 M1 (O6) |
+| Frontend tests | `cd chat_frontend && npm test` | ✅ 3 passing |
+| CI (all of the above on every push) | GitHub Actions | ✅ backend + frontend jobs |
 
 **Backend test suite.** `tests/` covers register/login (happy path, duplicate username, wrong
 password), `GET /users/me` (with/without token), message create/list/delete with
@@ -629,9 +632,9 @@ py -m pytest
 by default (override with `TEST_DATABASE_URL`), creates the schema from metadata, and
 `TRUNCATE`s between tests.
 
-**Planned (frontend).** Vitest + React Testing Library with MSW for the API, covering the
-login flow (token stored, redirect to `/chat`), the composer (typing + clicking Send issues
-exactly one `POST /messages/`), and the `RequireAuth` guard.
+**Frontend test suite.** Vitest + React Testing Library + jsdom cover unauthenticated route
+redirects, valid-token access and token-expiry handling. API-level UI tests (login and composer)
+remain planned with the `fetch`/TanStack Query data-layer migration.
 
 ## Milestones & roadmap
 
@@ -650,9 +653,9 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | ~~Alembic as the only schema owner; real initial migration; remove `create_all()`~~ ✅ | D1, D2, B9, D11 |
 | ~~One settings object; fail fast without `SECRET_KEY`~~ ✅; honour `iat`/`jti` later | B6 ✅, S5 🟡 |
 | ~~One pinned dependency list + `pyproject.toml` + `ruff`~~ ✅; `mypy` still open | D8, T3 🟡, T4, A5 |
-| Docker + Compose (`db`, `api`, `web`) with migrations on start | O13 |
-| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (15 passing); CI on every push | T1 ✅, T5, O6 |
-| `/health` + `/health/ready`; retire the public `/test-db` diagnostics | B8, O5 |
+| Docker + Compose (`db`, `api`, `web`) with migrations on start ✅ | O13 ✅ |
+| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (19 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
+| ~~`/health` + `/health/ready`; retire the public `/test-db` diagnostics~~ ✅ | B8 ✅, O5 🟡 |
 
 **M2 — Realtime as a first-class channel**
 
@@ -661,10 +664,10 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | WebSocket: authenticated handshake; move the token out of the query string | S1, S8 |
 | Persist socket messages through the service layer and broadcast JSON | B1, B12 |
 | Client: reconnect with backoff, de-duplication, connection state, defensive parsing | F3, F11 |
-| Protected routes, 401 interceptor, expiry UX, `AuthProvider` | F4, F5, Q29 |
+| ~~Protected routes, 401 interceptor, expiry UX, `AuthProvider`~~ ✅ | F4, F5, Q29 |
 | `fetch` client + TanStack Query for loading/error/empty states | F9, F14, F16 |
 | Pagination ("load older") and delete-message UI | F6, B10 |
-| Frontend tests (Vitest + RTL + MSW) | T2 |
+| ~~Frontend auth tests (Vitest + RTL)~~ ✅ (3 passing); API interaction tests remain | T2 |
 
 **M3 — AI, done right**
 

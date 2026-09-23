@@ -9,7 +9,8 @@ from chat_backend.database import get_db
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
-@router.post("/")
+
+@router.post("/", response_model=schemas.MessageOut)
 async def create_message(
     message: schemas.MessageCreate,
     db: AsyncSession = Depends(get_db),
@@ -21,7 +22,8 @@ async def create_message(
     await db.refresh(db_message)
     return db_message
 
-@router.get("/")
+
+@router.get("/", response_model=list[schemas.MessageOut])
 async def list_messages(
     db: AsyncSession = Depends(get_db),
     skip: int = 0,
@@ -35,6 +37,7 @@ async def list_messages(
         .limit(limit)
     )
     return result.scalars().all()
+
 
 @router.delete("/{message_id}")
 async def delete_message(

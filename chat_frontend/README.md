@@ -12,9 +12,9 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-The backend must be running on `http://127.0.0.1:8000` — the base URL is currently
-hard-coded in `src/api.ts` (`VITE_API_URL` is not read yet, see gap **F2** in
-[`../docs/GAPS_AND_IMPROVEMENTS.md`](../docs/GAPS_AND_IMPROVEMENTS.md)).
+The backend must be running on `http://127.0.0.1:8000` for the Vite dev proxy. The browser
+uses same-origin relative URLs; `VITE_DEV_API_TARGET` can override the proxy target in
+`chat_frontend/.env` when the API runs elsewhere.
 
 ## Scripts
 
@@ -30,16 +30,17 @@ hard-coded in `src/api.ts` (`VITE_API_URL` is not read yet, see gap **F2** in
 
 ```
 src/
-├── api.ts                  # axios client + request interceptor, endpoint wrappers, WS connector (fetch in M2 — Q27/F14)
+├── api.ts                  # axios client + 401 callback, endpoint wrappers, WS connector
 ├── types.ts                # User, Message, TokenResponse, SentimentResult, SummaryResult
-├── App.tsx                 # BrowserRouter route table
+├── App.tsx                 # BrowserRouter + protected route table
 ├── main.tsx                # React root
 ├── index.css               # `@import "tailwindcss";`
+├── auth/                   # AuthProvider, RequireAuth, token helpers and tests
 ├── components/
-│   ├── Navbar.tsx          # links + logout (clears the token)
+│   ├── Navbar.tsx          # links + logout through AuthProvider
 │   └── MessageList.tsx     # currently empty — extract the message list from Chat.tsx here
 └── pages/
-    ├── Login.tsx           # POST /users/login -> localStorage token -> /chat
+    ├── Login.tsx           # POST /users/login -> AuthProvider -> /chat
     ├── Register.tsx        # POST /users/register -> /login
     ├── Chat.tsx            # message feed, composer, WebSocket connection
     └── Analytics.tsx       # sentiment form + daily summary button
@@ -51,8 +52,8 @@ src/
 | --- | --- | --- |
 | `/`, `/login` | `Login` | – |
 | `/register` | `Register` | – |
-| `/chat` | `Chat` | none yet (gap **F4**) |
-| `/analytics` | `Analytics` | none yet (gap **F4**) |
+| `/chat` | `Chat` | `RequireAuth` |
+| `/analytics` | `Analytics` | `RequireAuth` |
 
 ## Styling
 
@@ -65,5 +66,6 @@ Tailwind CSS 4 is wired through the `@tailwindcss/vite` plugin in `vite.config.t
 
 - The JWT lives in `localStorage` under the key `token`.
 - `api.ts` attaches it as `Authorization: Bearer <token>` via a request interceptor.
-- `Chat.tsx` decodes `sub` with `jwt-decode` to learn the current user id.
-- There is no 401 interceptor or token-expiry handling yet (gap **F5**).
+- `AuthProvider` validates the token, owns the current user id, schedules expiry and handles
+  non-login 401 responses; `RequireAuth` protects private routes.
+- `Login.tsx` stores the token through the provider and shows a session-expired notice.
