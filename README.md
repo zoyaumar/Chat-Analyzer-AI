@@ -406,9 +406,9 @@ the test suite runs on.
 > tables (from the old `create_all()` era), stamp it once instead of upgrading:
 > `alembic stamp head`. Fresh databases just need `alembic upgrade head` (gap **D11**).
 
-Planned schema follow-ups: an index on `messages (user_id, timestamp DESC)` for the
-feed and the daily-summary query (D3), an explicit `ON DELETE` policy for `user_id` (D4),
-and `created_at`/`updated_at` columns (D5).
+Planned schema follow-ups: an explicit `ON DELETE` policy for `user_id` (D4)
+and `created_at`/`updated_at` columns (D5). Indexes on `user_id`, `timestamp`,
+and `(user_id, timestamp DESC)` are applied in migration `1a2b3c4d5e6f` (D3 ✅).
 
 ## API reference
 

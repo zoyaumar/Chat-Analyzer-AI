@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { connectWebSocket, deleteMessage, getMessages, sendMessage } from "../api";
 import { useAuth } from "../auth/useAuth";
+import MessageList from "../components/MessageList";
 import Navbar from "../components/Navbar";
 import { mergeMessages } from "../messages";
 import type { Message } from "../types";
@@ -105,34 +106,13 @@ export default function Chat() {
             {isLoadingOlder ? "Loading..." : "Load older messages"}
           </button>
         )}
-        <div
-          ref={feedRef}
-          role="log"
-          aria-live="polite"
-          className="border p-2 h-64 overflow-y-scroll mb-4"
-        >
-          {messages.map((message) => (
-            <div key={message.id} className="flex justify-between gap-2">
-              <span>
-                <b>
-                  {message.user_id === userId ? "You" : `User ${message.user_id}`}:
-                </b>{" "}
-                {message.text}
-              </span>
-              {message.user_id === userId && (
-                <button
-                  type="button"
-                  aria-label={`Delete message ${message.id}`}
-                  disabled={deletingMessageId !== null}
-                  onClick={() => void handleDelete(message.id)}
-                  className="text-red-600 disabled:opacity-50"
-                >
-                  {deletingMessageId === message.id ? "Deleting..." : "Delete"}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+        <MessageList
+          messages={messages}
+          currentUserId={userId}
+          deletingMessageId={deletingMessageId}
+          onDeleteMessage={(id) => void handleDelete(id)}
+          feedRef={feedRef}
+        />
         <input
           aria-label="Message"
           className="border p-2 w-3/4"
