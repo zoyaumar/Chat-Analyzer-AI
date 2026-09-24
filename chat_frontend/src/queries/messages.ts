@@ -39,6 +39,17 @@ function updateFeedCache(
 }
 
 /**
+ * Drop one message from every loaded page.
+ *
+ * Idempotent by construction: filtering for an id that is not there is a no-op,
+ * so a deletion announced twice — the delete response and the socket frame, or
+ * two tabs of the same user — cannot remove anything twice (gap B1).
+ */
+function removeMessage(pages: Message[][], messageId: number): Message[][] {
+  return pages.map((page) => page.filter((message) => message.id !== messageId));
+}
+
+/**
  * Merge a new message into the newest page. The pages are cached oldest-last,
  * so growing the first page cannot disturb the pagination cursor, which is read
  * from the last page. `mergeMessages` de-duplicates by `id`, so the socket echo
@@ -99,16 +110,15 @@ export function useDeleteMessage(userId: number | null) {
   return useMutation({
     mutationFn: (messageId: number) => deleteMessage(messageId),
     onSuccess: (_result, messageId) =>
-      updateFeedCache(queryClient, userId, (pages) =>
-        pages.map((page) => page.filter((message) => message.id !== messageId))
-      ),
+      updateFeedCache(queryClient, userId, (pages) => removeMessage(pages, messageId)),
   });
 }
 
 /**
  * A socket frame arrives outside React's data flow, so it writes the cache
- * directly. When the realtime layer lands (M2, gaps B1/B12) this is the hook
- * the connection callback uses.
+ * directly: this is the connection callback the realtime hook calls (M2, gap B1).
+ * It merges by `id`, so the echo of a message this tab just sent is not a second
+ * copy, and it is a no-op when the feed has not been loaded yet.
  */
 export function useAppendSocketMessage(userId: number | null) {
   const queryClient = useQueryClient();
@@ -116,6 +126,17 @@ export function useAppendSocketMessage(userId: number | null) {
   return useCallback(
     (message: Message) =>
       updateFeedCache(queryClient, userId, (pages) => appendToNewestPage(pages, message)),
+    [queryClient, userId]
+  );
+}
+
+/** The deletion broadcast handler: same idempotent removal the delete uses (B1). */
+export function useRemoveSocketMessage(userId: number | null) {
+  const queryClient = useQueryClient();
+
+  return useCallback(
+    (messageId: number) =>
+      updateFeedCache(queryClient, userId, (pages) => removeMessage(pages, messageId)),
     [queryClient, userId]
   );
 }

@@ -24,17 +24,22 @@ uses same-origin relative URLs; `VITE_DEV_API_TARGET` can override the proxy tar
 | `npm run build` | `tsc -b` type-check, then production bundle into `dist/` |
 | `npm run preview` | Serve the built bundle locally |
 | `npm run lint` | ESLint 9 (flat config) over the whole project |
-| `npm run test` | Vitest (jsdom) — auth guards, message merge, composer/delete UI, analytics, `fetch` client, query policy |
+| `npm run test` | Vitest (jsdom) — auth guards, message merge, composer/delete UI, analytics, `fetch` client, query policy, realtime socket hook, wire protocol |
 
 ## Source layout
 
 ```
 src/
-├── api.ts                  # endpoint wrappers (plain data) + WebSocket connector
+├── api.ts                  # endpoint wrappers (plain data)
 ├── apiClient.ts            # typed fetch client: bearer token, query params, ApiError, 401 callback
 ├── apiClient.test.ts       # client tests with a stubbed fetch
 ├── messages.ts              # chronological, id-based REST/socket merge helper
 ├── messages.test.ts         # focused merge-helper tests
+├── realtime/                # client end of /ws/chat (gaps S8, B1, F11)
+│   ├── protocol.ts          # chatSocketUrl, frame types, parseFrame, client ids, close codes
+│   ├── protocol.test.ts     # defensive frame-parsing tests
+│   ├── useChatSocket.ts     # react-use-websocket hook: first-frame auth, heartbeat, backoff, HTTP fallback
+│   └── useChatSocket.test.ts # hook lifecycle tests
 ├── queries/                 # TanStack Query layer (gap F16)
 │   ├── client.ts            # QueryClient: stale time, focus behaviour, retry predicate
 │   ├── client.test.ts       # retry-policy tests
@@ -53,8 +58,8 @@ src/
 └── pages/
     ├── Login.tsx           # POST /users/login -> AuthProvider -> /chat
     ├── Register.tsx        # POST /users/register -> /login
-    ├── Chat.tsx            # paginated feed, owner-only delete, composer, WebSocket connection
-    ├── Chat.test.tsx       # delete, composer and load-older interaction tests
+    ├── Chat.tsx            # paginated feed, owner-only delete, composer, useChatSocket connection
+    ├── Chat.test.tsx       # delete, composer, load-older and socket-fallback interaction tests
     ├── Analytics.tsx       # sentiment form + daily summary button
     └── Analytics.test.tsx  # sentiment result/error and daily-summary tests
 ```
@@ -82,7 +87,7 @@ Tailwind CSS 4 is wired through the `@tailwindcss/vite` plugin in `vite.config.t
   attach `Authorization: Bearer <token>`, build query strings, serialize JSON bodies (form-encoded
   for the login), return parsed JSON and throw a typed `ApiError` (`status`, plus the server's
   `detail`; `status` is `0` for a network failure). A non-login 401 notifies `AuthProvider`.
-- `api.ts` maps endpoint calls onto that client and keeps the WebSocket connector: it owns the
+- `api.ts` maps endpoint calls onto that client: it owns the
   `before`/`before_id` query mapping for `MessagePageParams` and the owner-only delete call.
 - `messages.ts` merges paginated REST results and socket frames by `id`, preserving chronological
   order so a message cannot appear twice when two delivery paths overlap.

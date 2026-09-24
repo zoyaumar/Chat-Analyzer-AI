@@ -33,6 +33,26 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 
+def user_id_from_token(token: str) -> int | None:
+    """The subject of a valid token, or `None` when the token is unusable.
+
+    Shared by the REST dependency and the WebSocket handshake so both transports
+    answer the same question the same way: an unreadable, expired or malformed
+    token is simply "no user", never a server error (gap S1).
+    """
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    except jwt.InvalidTokenError:
+        return None
+    subject = payload.get("sub")
+    if subject is None:
+        return None
+    try:
+        return int(subject)
+    except (TypeError, ValueError):
+        return None
+
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
@@ -42,14 +62,10 @@ async def get_current_user(
         detail="Invalid token",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
-    except jwt.InvalidTokenError:
-        raise credentials_error
-    user_id = payload.get("sub")
+    user_id = user_id_from_token(token)
     if user_id is None:
         raise credentials_error
-    user = await db.get(models.User, int(user_id))
+    user = await db.get(models.User, user_id)
     if user is None:
         raise credentials_error
     return user

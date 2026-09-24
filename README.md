@@ -145,8 +145,7 @@ Request flow in words:
    directly instead of refetching it.
 4. FastAPI validates the token in `auth_utils`, resolves the current user, and hands the route
    an async `AsyncSession` through the `get_db` dependency.
-5. Route handlers currently contain the database queries. When B1 adds the WebSocket write path,
-   move the shared message operations into `crud.py` so REST and socket use one persistence path.
+5. Route handlers and WebSocket messages persist through a shared `crud.py` service layer (`create_message`, `get_messages_for_user`, `delete_message`). Both REST and WebSocket operations write messages identically and broadcast realtime frames via `realtime.manager.send_to_user`.
 6. Analytics endpoints call the NLP layer. Results are currently computed on demand; persisting
    scores with each message is scheduled for M3.
 
@@ -183,7 +182,7 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Same-origin access | Vite dev proxy + nginx `web` container in production | in place (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
-| Tests | Vitest + React Testing Library | in use (20 tests: auth, message merge, composer/delete UI, analytics, `fetch` client, query policy) |
+| Tests | Vitest + React Testing Library | in use (45 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy) |
 
 ## Repository layout
 
@@ -221,8 +220,9 @@ Chat-Analyzer-AI/
 │       └── websocket.py           # WS /ws/chat — authenticated, persisted, broadcast (M2)
 ├── chat_frontend/                 # React + Vite SPA
 │   ├── src/
-│   │   ├── api.ts                 # endpoint wrappers (plain data) + WebSocket connector
+│   │   ├── api.ts                 # endpoint wrappers (plain data)
 │   │   ├── apiClient.ts           # typed fetch client: bearer token, query params, ApiError
+│   │   ├── realtime/              # useChatSocket + protocol: first-frame auth, heartbeat, reconnect
 │   │   ├── queries/               # query keys, client policy and the message/analytics hooks
 │   │   ├── test/                  # Vitest setup + render helper with a QueryClient
 │   │   ├── types.ts               # shared TypeScript interfaces (M2: generated from OpenAPI)
@@ -322,7 +322,7 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 | `npm run dev` | `chat_frontend/` | Vite dev server with HMR |
 | `npm run build` | `chat_frontend/` | type-check (`tsc -b`) + production bundle |
 | `npm run lint` | `chat_frontend/` | ESLint over the SPA |
-| `npm test` | `chat_frontend/` | Vitest suite (20 tests: auth, merge, composer/delete UI, analytics, `fetch` client, query policy) |
+| `npm test` | `chat_frontend/` | Vitest suite (45 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy) |
 | `py -m compileall chat_backend` | repo root | quick syntax check of the backend |
 
 ## Definition of shippable
@@ -539,41 +539,46 @@ Current analytics behavior:
 | Item | Value |
 | --- | --- |
 | Endpoint | `WS /ws/chat` (same origin — the Vite dev proxy forwards `/ws`) |
-| Auth | handshake validation, then the token in the first frame (decided; see below) |
-| Client → server | `{ "text": "..." }` for a new message, `{ "type": "ping" }` for keepalive |
-| Server → all clients | the created `Message` as JSON |
+| Auth | first frame: `{"type": "auth", "token": "<jwt>"}` (RFC 6455 1008 if invalid/timed out) |
+| Client → server | `{"type": "message", "text": "...", "client_id": "..."}` or `{"type": "ping"}` |
+| Server → user sockets | `{"type": "message", "message": <MessageOut>, "client_id": "..."}`, `{"type": "message_deleted", "message_id": <id>, "user_id": <user_id>}`, `{"type": "pong"}` |
 
 ```ts
-// chat_frontend/src/api.ts — target shape (M2)
-const ws = new WebSocket(`${location.origin.replace(/^http/, "ws")}/ws/chat`);
-ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token }));
+// chat_frontend/src/realtime/useChatSocket.ts
+const { status, send } = useChatSocket({
+  token,
+  userId,
+  onMessage: appendSocketMessage,
+  onMessageDeleted: removeSocketMessage,
+  sendOverHttp: (text) => sendOverHttp.mutateAsync(text),
+});
 ```
 
 Where it stands today, stated plainly:
 
-- ✅ The handshake validates the JWT — a missing or invalid token closes the socket (1008).
-- ✅ The server replies with JSON and the client parses defensively, ignoring frames that are
-  not `Message`-shaped (gaps **S1**, **F3**).
-- ⬜ Messages are neither persisted nor broadcast (`ConnectionManager.broadcast` is defined but
-  unused), so it is not yet a chat channel (gap **B1**).
-- ⬜ The token travels in the query string (`?token=`), which puts a credential in
-  access logs and browser history (gap **S8**).
+- ✅ The handshake validates the JWT via first-frame auth — invalid/missing tokens receive close code 1008 (gaps **S1**, **S8**).
+- ✅ Realtime wire protocol is typed and defensive (`parseFrame` drops unknown or non-object payloads) (gap **F3**).
+- ✅ Messages sent over WebSocket persist into PostgreSQL via `crud.create_message` and broadcast to all active connections for that user with `client_id` echoed for sender reconciliation (gap **B1**).
+- ✅ Deletion broadcasts (`message_deleted`) update loaded cache feeds across active tabs idempotently (gap **B1**).
+- ✅ Reconnection with exponential backoff, ping/pong keepalive (25s interval, 10s timeout), and fallback to REST when disconnected or refused (gap **F11**).
 
-**This endpoint is deliberately kept, not deleted** — realtime delivery is a first-class part
-of the product, and M2 finishes it: authenticate at handshake, move the token out of the URL
-into the first frame, persist through the same service layer REST uses, broadcast JSON, and add
-client-side reconnect with backoff. The reasoning is recorded in
-[`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) (Q16, Q41).
-
-Target protocol once M2 lands:
+Protocol details:
 
 ```jsonc
-// client -> server
+// client -> server (handshake)
 { "type": "auth", "token": "<jwt>" }
-{ "text": "hello" }
 
-// server -> every connected client
-{ "id": 13, "user_id": 1, "text": "hello", "timestamp": "2026-02-11T18:03:41Z" }
+// server -> client (ack)
+{ "type": "auth_ok", "user_id": 1 }
+
+// client -> server (send)
+{ "type": "message", "text": "hello", "client_id": "c1" }
+
+// server -> author's connected sockets
+{ "type": "message", "message": { "id": 13, "user_id": 1, "text": "hello", "timestamp": "2026-02-11T18:03:41Z" }, "client_id": "c1" }
+
+// server -> author's connected sockets on deletion (HTTP or WS)
+{ "type": "message_deleted", "message_id": 13, "user_id": 1 }
 ```
 
 ## Deployment
@@ -610,11 +615,11 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 24 passing (needs a Postgres; see below) |
+| Backend tests | `py -m pytest` | ✅ 42 passing (needs a Postgres; see below) |
 | Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | 🔨 M1 (T3) |
-| Frontend tests | `cd chat_frontend && npm test` | ✅ 20 passing (6 files) |
+| Frontend tests | `cd chat_frontend && npm test` | ✅ 45 passing (8 files) |
 | CI (all of the above on every push) | GitHub Actions | ✅ backend + frontend jobs |
 
 **Backend test suite.** `tests/` covers register/login (happy path, duplicate username, wrong
@@ -637,7 +642,9 @@ by default (override with `TEST_DATABASE_URL`), creates the schema from metadata
 redirects, valid-token access, token-expiry handling, REST/socket message de-duplication, the
 owner-only delete and composer interactions, the analytics actions, the keyset "load older" cursor,
 the `fetch` client (token header, query mapping, `ApiError`, 401 handler) and the TanStack Query
-retry policy — 20 tests across 6 files. A dedicated login-form test remains open.
+retry policy — 45 tests across 8 files, including the `useChatSocket` hook (heartbeat, backoff,
+auth rejection, HTTP fallback) and the defensive `parseFrame` protocol tests. A dedicated
+login-form test remains open.
 
 ## Milestones & roadmap
 
@@ -658,22 +665,22 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | ~~One settings object; fail fast without `SECRET_KEY`~~ ✅; honour `iat`/`jti` later | B6 ✅, S5 🟡 |
 | ~~One pinned dependency list + `pyproject.toml` + `ruff`~~ ✅; `mypy` still open | D8, T3 🟡, T4, A5 |
 | Docker + Compose (`db`, `api`, `web`) with migrations on start ✅ | O13 ✅ |
-| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (24 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
+| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (42 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
 | ~~`/health` + `/health/ready`; retire the public `/test-db` diagnostics~~ ✅ | B8 ✅, O5 🟡 |
 
 **M2 — Realtime as a first-class channel**
 
 | Work | Gaps |
 | --- | --- |
-| WebSocket: authenticated handshake; move the token out of the query string | S1, S8 |
-| Persist socket messages through the service layer and broadcast JSON | B1, B12 |
-| Client: reconnect with backoff, connection state and defensive parsing | F3, F11 |
+| ~~WebSocket: authenticated handshake; move the token out of the query string~~ ✅ | S1, S8 ✅ |
+| ~~Persist socket messages through the service layer and broadcast JSON~~ ✅ | B1, B12 ✅ |
+| ~~Client: reconnect with backoff, connection state and defensive parsing~~ ✅ | F3, F11 ✅ |
 | ~~Protected routes, 401 interceptor, expiry UX, `AuthProvider`~~ ✅ | F4, F5, Q29 |
 | ~~Loading, error and empty states on every page~~ ✅ | F9 ✅ |
 | ~~Typed `fetch` client replacing axios, with tests~~ ✅ | F14 ✅, Q27 |
 | ~~TanStack Query for the server-state layer (keys, retries, mutations)~~ ✅ | F16 ✅, Q28 |
 | ~~Keyset pagination, load-older UI, owner-only delete UI and `id`-based merge~~ ✅ | B10 ✅, F6 |
-| ~~Frontend tests for auth, merge, delete/composer UI, analytics and the query policy (Vitest + RTL)~~ ✅ (20 passing); a login-form test remains | T2 |
+| ~~Frontend tests for auth, merge, delete/composer UI, analytics, socket hook, and query policy (Vitest + RTL)~~ ✅ (45 passing across 8 files) | T2 ✅ |
 
 **M3 — AI, done right**
 
@@ -694,7 +701,8 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | Tailwind design tokens, shared UI primitives, accessibility pass | F12 |
 | Types generated from OpenAPI; delete dead files and template leftovers | F13 follow-up, F7, F8 |
 | Redis pub/sub (or `LISTEN/NOTIFY`) for multi-instance fan-out | Q18 |
-| Feature work: rooms/DMs, presence, typing indicators, read receipts, search, attachments | P1–P15 |
+| All-users ("global") broadcast to every connected client, not only the author's sockets | P16 |
+| Feature work: rooms/DMs, presence, typing indicators, read receipts, search, attachments | P1–P16 |
 
 ## Documentation
 

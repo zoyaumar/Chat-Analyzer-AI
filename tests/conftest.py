@@ -10,6 +10,8 @@ import os
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+from starlette.testclient import TestClient
 
 _default_url = os.environ.get("DATABASE_URL") or (
     "postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/chat_test"
@@ -63,7 +65,38 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
-    app.dependency_overrides.clear()
+    # Remove only our own override: another fixture may have registered its own.
+    app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture
+def ws_client(monkeypatch):
+    """A sync `TestClient` for socket tests, wired to the test database.
+
+    `TestClient` drives the app in its own portal event loop, which the async
+    fixtures do not share, so this engine uses `NullPool`: one connection per
+    operation, never a pooled connection created on a different loop. The socket
+    handler's session factory is swapped for the same one, and `get_db` is
+    overridden so the HTTP calls these tests make (register, log in, list,
+    delete) read the same database as the socket.
+
+    Registering through this client is also why the token and the socket agree:
+    the socket re-loads the user by id from this database before accepting it.
+    """
+    from chat_backend.routes import websocket as websocket_module
+
+    test_engine = create_async_engine(os.environ["DATABASE_URL"], poolclass=NullPool)
+    session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    monkeypatch.setattr(websocket_module, "SessionLocal", session_factory)
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture

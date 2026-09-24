@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { connectWebSocket } from "../api";
+import { useRef, useState } from "react";
 import { isUnauthorized } from "../apiClient";
 import { useAuth } from "../auth/useAuth";
 import MessageList from "../components/MessageList";
@@ -8,39 +7,79 @@ import {
   useAppendSocketMessage,
   useDeleteMessage,
   useMessageFeed,
+  useRemoveSocketMessage,
   useSendMessage,
 } from "../queries/messages";
+import {
+  SocketClosed,
+  SocketEchoTimeout,
+  useChatSocket,
+  type SocketStatus,
+} from "../realtime/useChatSocket";
+
+/** The backend's limit (`MessageCreate`), mirrored so the composer cannot overshoot (B6). */
+const MAX_MESSAGE_LENGTH = 4000;
 
 /** A session-wide error is already handled by `AuthProvider` (F5); it needs no banner. */
 function errorText(error: unknown, fallback: string): string {
   return error && !isUnauthorized(error) ? fallback : "";
 }
 
+/** What the connection state means for the next message the user types. */
+const STATUS_TEXT: Record<SocketStatus, string> = {
+  connected: "Realtime: connected",
+  connecting: "Realtime: connecting…",
+  reconnecting: "Realtime: reconnecting…",
+  offline: "Realtime: offline — sending over HTTP",
+};
+
+/**
+ * Why a send did not complete.
+ *
+ * An unconfirmed socket send is deliberately *not* retried over HTTP: the server
+ * may already have stored it, so the honest move is to warn and let the user look
+ * at the feed before sending again (gap F11).
+ */
+function sendFailureText(error: unknown): string {
+  if (isUnauthorized(error)) return "";
+  if (error instanceof SocketEchoTimeout) {
+    return "Sent, but not confirmed in time — check the feed before sending again.";
+  }
+  if (error instanceof SocketClosed) {
+    return "The connection closed before the message was confirmed — check the feed before sending again.";
+  }
+  return "Failed to send message. Please try again.";
+}
+
 export default function Chat() {
   const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [socketError, setSocketError] = useState("");
   const feedRef = useRef<HTMLDivElement>(null);
-  const ws = useRef<WebSocket | null>(null);
   const { token, userId } = useAuth();
 
   const feed = useMessageFeed(userId);
   const appendSocketMessage = useAppendSocketMessage(userId);
-  const sendMessage = useSendMessage(userId);
+  const removeSocketMessage = useRemoveSocketMessage(userId);
+  const sendOverHttp = useSendMessage(userId);
   const deleteMessage = useDeleteMessage(userId);
 
-  useEffect(() => {
-    if (!token || userId === null) return;
-
-    ws.current = connectWebSocket(appendSocketMessage, token);
-
-    return () => {
-      ws.current?.close();
-    };
-  }, [appendSocketMessage, token, userId]);
+  // The socket is the normal send path; HTTP is what `send` uses when the socket
+  // cannot carry the message (signed out, refused handshake, offline, reconnecting).
+  const socket = useChatSocket({
+    token,
+    userId,
+    onMessage: appendSocketMessage,
+    onMessageDeleted: removeSocketMessage,
+    sendOverHttp: (text) => sendOverHttp.mutateAsync(text),
+    onError: setSocketError,
+  });
 
   // While the delete request is in flight its variables name the row to disable.
   const deletingMessageId = deleteMessage.isPending ? deleteMessage.variables ?? null : null;
   const error =
-    errorText(sendMessage.error, "Failed to send message. Please try again.") ||
+    socketError ||
+    errorText(sendOverHttp.error, "Failed to send message. Please try again.") ||
     errorText(deleteMessage.error, "Failed to delete message. Please try again.") ||
     errorText(feed.isOlderError ? feed.error : null, "Failed to load older messages.") ||
     errorText(feed.error, "Failed to load messages. Please try again.");
@@ -60,16 +99,34 @@ export default function Chat() {
     }
   };
 
-  const handleSend = () => {
-    if (!input.trim() || sendMessage.isPending) return;
-    sendMessage.mutate(input, { onSuccess: () => setInput("") });
+  const handleSend = async () => {
+    const text = input;
+    if (!text.trim() || isSending) return;
+
+    setSocketError("");
+    setIsSending(true);
+    try {
+      await socket.send(text);
+      setInput("");
+    } catch (sendError) {
+      // The text stays in the composer: the warning tells the user to check the
+      // feed first, and clearing it would invite a duplicate.
+      setSocketError(sendFailureText(sendError));
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
     <div>
       <Navbar />
       <div className="p-4">
-        <h1 className="text-xl mb-4">Chat</h1>
+        <div className="flex items-center gap-3 mb-4">
+          <h1 className="text-xl">Chat</h1>
+          <p role="status" className="text-sm text-gray-600">
+            {STATUS_TEXT[socket.status]}
+          </p>
+        </div>
         {error && (
           <div role="alert" className="bg-red-100 text-red-700 p-2 rounded mb-3 text-sm">
             {error}
@@ -97,21 +154,22 @@ export default function Chat() {
           aria-label="Message"
           className="border p-2 w-3/4"
           value={input}
-          disabled={sendMessage.isPending}
+          maxLength={MAX_MESSAGE_LENGTH}
+          disabled={isSending}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              handleSend();
+              void handleSend();
             }
           }}
         />
         <button
-          onClick={handleSend}
-          disabled={sendMessage.isPending || !input.trim()}
+          onClick={() => void handleSend()}
+          disabled={isSending || !input.trim()}
           className="bg-blue-600 text-white px-4 py-2 ml-2 disabled:opacity-50"
         >
-          {sendMessage.isPending ? "Sending..." : "Send"}
+          {isSending ? "Sending..." : "Send"}
         </button>
       </div>
     </div>

@@ -37,28 +37,3 @@ export const analyzeSentiment = (text: string) =>
 
 export const getDailySummary = () => apiGet<SummaryResult>("/analytics/daily");
 
-export function connectWebSocket(
-  onMessage: (msg: Message) => void,
-  token: string
-): WebSocket {
-  const ws = new WebSocket(
-    `${location.origin.replace(/^http/, "ws")}/ws/chat?token=${encodeURIComponent(token)}`
-  );
-
-  ws.onmessage = (event) => {
-    let data: unknown;
-    try {
-      data = JSON.parse(event.data);
-    } catch {
-      return;
-    }
-
-    const message = data as Partial<Message>;
-    if (typeof message.id === "number" && typeof message.text === "string") {
-      onMessage(message as Message);
-    }
-  };
-
-  return ws;
-}
-

@@ -2,12 +2,12 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chat_backend import models, schemas
+from chat_backend import crud, models, realtime, schemas
 from chat_backend.auth_utils import get_current_user
 from chat_backend.database import get_db
+from chat_backend.realtime import manager
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -18,10 +18,14 @@ async def create_message(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    db_message = models.Message(user_id=current_user.id, text=message.text)
-    db.add(db_message)
-    await db.commit()
-    await db.refresh(db_message)
+    """Store the message, then push it to every socket the author has open (gap B1).
+
+    The push is the same frame a socket-sent message produces, so a tab that
+    sends over HTTP with a dead socket still sees the message appear everywhere
+    else.
+    """
+    db_message = await crud.create_message(db, user_id=current_user.id, text=message.text)
+    await manager.send_to_user(current_user.id, realtime.message_frame(db_message))
     return db_message
 
 
@@ -39,24 +43,13 @@ async def list_messages(
     if before is not None and before.tzinfo is None:
         raise HTTPException(status_code=400, detail="before must include a timezone")
 
-    query = select(models.Message).where(models.Message.user_id == current_user.id)
-    if before is not None:
-        query = query.where(
-            or_(
-                models.Message.timestamp < before,
-                and_(
-                    models.Message.timestamp == before,
-                    models.Message.id < before_id,
-                ),
-            )
-        )
-
-    result = await db.execute(
-        query.order_by(models.Message.timestamp.desc(), models.Message.id.desc()).limit(limit)
+    return await crud.get_messages_for_user(
+        db,
+        user_id=current_user.id,
+        limit=limit,
+        before=before,
+        before_id=before_id,
     )
-    messages = list(result.scalars().all())
-    messages.reverse()
-    return messages
 
 
 @router.delete("/{message_id}")
@@ -65,15 +58,13 @@ async def delete_message(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(models.Message).where(
-            models.Message.id == message_id,
-            models.Message.user_id == current_user.id,
-        )
-    )
-    msg = result.scalars().first()
-    if not msg:
+    result = await crud.delete_message(db, message_id=message_id, user_id=current_user.id)
+    if not result:
+        # "Not found" and "not yours" are deliberately one answer (gap S2), and a
+        # delete that changed nothing tells the sockets nothing.
         raise HTTPException(status_code=404, detail="Message not found or not yours")
-    await db.delete(msg)
-    await db.commit()
+
+    await manager.send_to_user(
+        current_user.id, realtime.message_deleted_frame(message_id, current_user.id)
+    )
     return {"detail": "Message deleted"}
