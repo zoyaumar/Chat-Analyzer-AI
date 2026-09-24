@@ -97,7 +97,7 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 flowchart LR
     subgraph Browser["Browser - React 19 + Vite"]
         UI["Pages: Login / Register / Chat / Analytics"]
-        CL["api client - axios + AuthProvider"]
+        CL["api client - fetch + TanStack Query + AuthProvider"]
         WSC["WebSocket client"]
     end
 
@@ -139,12 +139,15 @@ Request flow in words:
    and in the shipped Docker stack nginx serves the SPA and proxies API/WebSocket traffic. That
    removes CORS from the equation entirely (see gap S4).
 2. The client stores the JWT and attaches it as `Authorization: Bearer <token>` on every
-   request through a single client module (`src/api.ts`).
-3. FastAPI validates the token in `auth_utils`, resolves the current user, and hands the route
+   request through the typed `fetch` wrapper (`src/apiClient.ts`).
+3. Pages read server state through TanStack Query hooks in `src/queries/`: one cache and one
+   query-key convention, retries for network failures, and mutations that write the cached feed
+   directly instead of refetching it.
+4. FastAPI validates the token in `auth_utils`, resolves the current user, and hands the route
    an async `AsyncSession` through the `get_db` dependency.
-4. Route handlers currently contain the database queries. When B1 adds the WebSocket write path,
+5. Route handlers currently contain the database queries. When B1 adds the WebSocket write path,
    move the shared message operations into `crud.py` so REST and socket use one persistence path.
-5. Analytics endpoints call the NLP layer. Results are currently computed on demand; persisting
+6. Analytics endpoints call the NLP layer. Results are currently computed on demand; persisting
    scores with each message is scheduled for M3.
 
 ## Tech stack
@@ -175,12 +178,12 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Build tool | Vite 7 (`@vitejs/plugin-react`) | in use |
 | Styling | Tailwind CSS 4 via the `@tailwindcss/vite` plugin | in use |
 | Routing | React Router 7 (`BrowserRouter`) | in use |
-| HTTP | axios client; migrate to native `fetch` in M2 | in use (Q27/F14) |
-| Server state | TanStack Query — caching, retries, invalidation, loading/error state | M2 (`useEffect` + `useState` today) |
+| HTTP | native `fetch` behind a typed client (`src/apiClient.ts`); axios removed | ✅ (Q27/F14) |
+| Server state | TanStack Query 5 (`src/queries/`) — cache, retries, mutations, loading/error state | ✅ (Q28/F16) |
 | Same-origin access | Vite dev proxy + nginx `web` container in production | in place (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
-| Tests | Vitest + React Testing Library | in use (6 tests: auth, message merge and delete UI) |
+| Tests | Vitest + React Testing Library | in use (20 tests: auth, message merge, composer/delete UI, analytics, `fetch` client, query policy) |
 
 ## Repository layout
 
@@ -218,13 +221,15 @@ Chat-Analyzer-AI/
 │       └── websocket.py           # WS /ws/chat — authenticated, persisted, broadcast (M2)
 ├── chat_frontend/                 # React + Vite SPA
 │   ├── src/
-│   │   ├── api.ts                 # one origin, one client, typed helpers
-│   │   ├── queries/               # M2 — TanStack Query hooks
+│   │   ├── api.ts                 # endpoint wrappers (plain data) + WebSocket connector
+│   │   ├── apiClient.ts           # typed fetch client: bearer token, query params, ApiError
+│   │   ├── queries/               # query keys, client policy and the message/analytics hooks
+│   │   ├── test/                  # Vitest setup + render helper with a QueryClient
 │   │   ├── types.ts               # shared TypeScript interfaces (M2: generated from OpenAPI)
 │   │   ├── App.tsx                # BrowserRouter + protected route table
 
 │   │   ├── auth/                 # AuthProvider, RequireAuth, token helpers
-│   │   ├── components/            # Navbar, MessageList (extracted from Chat.tsx in M2)
+│   │   ├── components/            # Navbar, MessageList (extracted from Chat.tsx)
 │   │   └── pages/                 # Login, Register, Chat, Analytics
 │   ├── index.html
 │   ├── vite.config.ts             # M1 — dev proxy for /api, /ws
@@ -317,7 +322,7 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 | `npm run dev` | `chat_frontend/` | Vite dev server with HMR |
 | `npm run build` | `chat_frontend/` | type-check (`tsc -b`) + production bundle |
 | `npm run lint` | `chat_frontend/` | ESLint over the SPA |
-| `npm test` | `chat_frontend/` | Vitest suite (6 tests: auth, message merge and delete UI) |
+| `npm test` | `chat_frontend/` | Vitest suite (20 tests: auth, merge, composer/delete UI, analytics, `fetch` client, query policy) |
 | `py -m compileall chat_backend` | repo root | quick syntax check of the backend |
 
 ## Definition of shippable
@@ -609,7 +614,7 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | 🔨 M1 (T3) |
-| Frontend tests | `cd chat_frontend && npm test` | ✅ 3 passing |
+| Frontend tests | `cd chat_frontend && npm test` | ✅ 20 passing (6 files) |
 | CI (all of the above on every push) | GitHub Actions | ✅ backend + frontend jobs |
 
 **Backend test suite.** `tests/` covers register/login (happy path, duplicate username, wrong
@@ -629,9 +634,10 @@ by default (override with `TEST_DATABASE_URL`), creates the schema from metadata
 `TRUNCATE`s between tests.
 
 **Frontend test suite.** Vitest + React Testing Library + jsdom cover unauthenticated route
-redirects, valid-token access, token-expiry handling, REST/socket message de-duplication and the
-owner-only delete interaction. Broader API-level UI tests (login and composer) remain planned
-with the `fetch`/TanStack Query data-layer migration.
+redirects, valid-token access, token-expiry handling, REST/socket message de-duplication, the
+owner-only delete and composer interactions, the analytics actions, the keyset "load older" cursor,
+the `fetch` client (token header, query mapping, `ApiError`, 401 handler) and the TanStack Query
+retry policy — 20 tests across 6 files. A dedicated login-form test remains open.
 
 ## Milestones & roadmap
 
@@ -663,9 +669,11 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | Persist socket messages through the service layer and broadcast JSON | B1, B12 |
 | Client: reconnect with backoff, connection state and defensive parsing | F3, F11 |
 | ~~Protected routes, 401 interceptor, expiry UX, `AuthProvider`~~ ✅ | F4, F5, Q29 |
-| `fetch` client + TanStack Query caching (explicit loading/error/empty states now in place ✅) | F9 ✅, F14, F16 |
+| ~~Loading, error and empty states on every page~~ ✅ | F9 ✅ |
+| ~~Typed `fetch` client replacing axios, with tests~~ ✅ | F14 ✅, Q27 |
+| ~~TanStack Query for the server-state layer (keys, retries, mutations)~~ ✅ | F16 ✅, Q28 |
 | ~~Keyset pagination, load-older UI, owner-only delete UI and `id`-based merge~~ ✅ | B10 ✅, F6 |
-| ~~Frontend auth, merge and delete-UI tests (Vitest + RTL)~~ ✅ (6 passing); API interaction tests remain | T2 |
+| ~~Frontend tests for auth, merge, delete/composer UI, analytics and the query policy (Vitest + RTL)~~ ✅ (20 passing); a login-form test remains | T2 |
 
 **M3 — AI, done right**
 
@@ -700,7 +708,8 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 
 1. Branch from `main` (`git checkout -b feature/short-description`).
 2. Keep the conventions: routers under `chat_backend/routes/`, Pydantic schemas in
-   `schemas.py`, shared queries in `crud.py`, HTTP calls centralised in `src/api.ts`, Tailwind
+   `schemas.py`, shared queries in `crud.py`, HTTP calls centralised in `src/api.ts` (wrappers) and
+   `src/apiClient.ts` (transport), Tailwind
    utility classes inline.
 3. Run the checks before opening a PR:
 

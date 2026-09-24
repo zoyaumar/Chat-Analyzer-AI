@@ -1,6 +1,6 @@
 import { useState } from "react";
-import axios from "axios";
 import { registerUser } from "../api";
+import { isApiError } from "../apiClient";
 import { useNavigate } from "react-router-dom";
 
 export default function Register() {
@@ -19,17 +19,12 @@ export default function Register() {
       await registerUser({ username, password });
       navigate("/login");
     } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        const detail = err.response?.data?.detail;
-        if (typeof detail === "string") {
-          setError(detail);
-        } else if (err.response?.status === 400 || err.response?.status === 422) {
-          setError("Invalid registration details. Please check your username and password.");
-        } else {
-          setError("Registration failed. Please try again later.");
-        }
+      if (isApiError(err) && err.detail) {
+        setError(err.detail);
+      } else if (isApiError(err) && (err.status === 400 || err.status === 422)) {
+        setError("Invalid registration details. Please check your username and password.");
       } else {
-        setError("Failed to register. Please try again.");
+        setError("Registration failed. Please try again later.");
       }
     } finally {
       setLoading(false);

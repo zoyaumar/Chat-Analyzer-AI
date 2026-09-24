@@ -1,65 +1,47 @@
 import { useState } from "react";
-import axios from "axios";
-import { analyzeSentiment, getDailySummary } from "../api";
+import { isApiError } from "../apiClient";
 import Navbar from "../components/Navbar";
-import type { SentimentResult, SummaryResult } from "../types";
+import { useDailySummary, useSentimentAnalysis } from "../queries/analytics";
+
+function sentimentErrorText(error: Error | null): string {
+  if (!error) return "";
+  if (isApiError(error) && error.detail) return error.detail;
+  if (isApiError(error) && error.status === 422) {
+    return "Invalid text input. Max 4,000 characters.";
+  }
+  if (isApiError(error) && error.status === 401) return "";
+  return "Failed to analyze sentiment. Please try again.";
+}
+
+function summaryErrorText(error: Error | null): string {
+  if (!error) return "";
+  if (isApiError(error) && error.status === 401) return "";
+  return "Failed to fetch daily summary. Please try again.";
+}
 
 export default function Analytics() {
   const [text, setText] = useState("");
-  const [sentiment, setSentiment] = useState<SentimentResult | null>(null);
-  const [sentimentLoading, setSentimentLoading] = useState(false);
-  const [sentimentError, setSentimentError] = useState("");
+  // The summary is a read, so it becomes a query once the user asks for it.
+  const [summaryRequested, setSummaryRequested] = useState(false);
 
-  const [summary, setSummary] = useState<SummaryResult | null>(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryError, setSummaryError] = useState("");
+  const sentiment = useSentimentAnalysis();
+  const summary = useDailySummary(summaryRequested);
 
-  const handleSentiment = async () => {
-    if (!text.trim() || sentimentLoading) return;
-    setSentimentLoading(true);
-    setSentimentError("");
-    setSentiment(null);
+  const sentimentError = sentimentErrorText(sentiment.error);
+  const summaryError = summaryErrorText(summary.error);
 
-    try {
-      const res = await analyzeSentiment(text);
-      setSentiment(res.data);
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        const detail = err.response?.data?.detail;
-        if (typeof detail === "string") {
-          setSentimentError(detail);
-        } else if (err.response?.status === 422) {
-          setSentimentError("Invalid text input. Max 4,000 characters.");
-        } else if (err.response?.status !== 401) {
-          setSentimentError("Failed to analyze sentiment. Please try again.");
-        }
-      } else {
-        setSentimentError("An unexpected error occurred.");
-      }
-    } finally {
-      setSentimentLoading(false);
-    }
+  const handleSentiment = () => {
+    if (!text.trim() || sentiment.isPending) return;
+    sentiment.reset();
+    sentiment.mutate(text);
   };
 
-  const handleSummary = async () => {
-    if (summaryLoading) return;
-    setSummaryLoading(true);
-    setSummaryError("");
-    setSummary(null);
-
-    try {
-      const res = await getDailySummary();
-      setSummary(res.data);
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        if (err.response?.status !== 401) {
-          setSummaryError("Failed to fetch daily summary. Please try again.");
-        }
-      } else {
-        setSummaryError("An unexpected error occurred.");
-      }
-    } finally {
-      setSummaryLoading(false);
+  const handleSummary = () => {
+    if (summary.isFetching) return;
+    if (summaryRequested) {
+      void summary.refetch();
+    } else {
+      setSummaryRequested(true);
     }
   };
 
@@ -81,28 +63,28 @@ export default function Analytics() {
               aria-label="Sentiment text"
               className="border p-2 flex-1"
               value={text}
-              disabled={sentimentLoading}
+              disabled={sentiment.isPending}
               onChange={(e) => setText(e.target.value)}
               placeholder="Enter text to analyze"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  void handleSentiment();
+                  handleSentiment();
                 }
               }}
             />
             <button
               onClick={handleSentiment}
-              disabled={sentimentLoading || !text.trim()}
+              disabled={sentiment.isPending || !text.trim()}
               className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
             >
-              {sentimentLoading ? "Analyzing..." : "Analyze"}
+              {sentiment.isPending ? "Analyzing..." : "Analyze"}
             </button>
           </div>
-          {sentiment && (
+          {sentiment.data && (
             <div className="mt-3 p-3 bg-gray-50 border rounded text-sm">
-              <span className="font-semibold capitalize">{sentiment.label}</span> (
-              {(sentiment.score * 100).toFixed(1)}% confidence)
+              <span className="font-semibold capitalize">{sentiment.data.label}</span> (
+              {(sentiment.data.score * 100).toFixed(1)}% confidence)
             </div>
           )}
         </div>
@@ -116,17 +98,17 @@ export default function Analytics() {
           )}
           <button
             onClick={handleSummary}
-            disabled={summaryLoading}
+            disabled={summary.isFetching}
             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
           >
-            {summaryLoading ? "Generating Summary..." : "Get Daily Summary"}
+            {summary.isFetching ? "Generating Summary..." : "Get Daily Summary"}
           </button>
-          {summary && (
+          {summary.data && (
             <div className="mt-3 p-3 bg-gray-50 border rounded text-sm">
               <div className="font-semibold text-gray-700 mb-1">
-                Summary for {summary.date}
+                Summary for {summary.data.date}
               </div>
-              <p className="text-gray-800">{summary.summary}</p>
+              <p className="text-gray-800">{summary.data.summary}</p>
             </div>
           )}
         </div>

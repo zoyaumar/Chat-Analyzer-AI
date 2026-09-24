@@ -1,7 +1,7 @@
 import { useState } from "react";
-import axios from "axios";
-import { useLocation, useNavigate } from "react-router-dom";
 import { loginUser } from "../api";
+import { isApiError } from "../apiClient";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 
 interface LoginState {
@@ -25,20 +25,16 @@ export default function Login() {
     setError("");
 
     try {
-      const response = await loginUser({ username, password });
-      signIn(response.data.access_token);
+      const { access_token: token } = await loginUser({ username, password });
+      signIn(token);
       navigate("/chat");
     } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        if (err.response?.status === 400 || err.response?.status === 401) {
-          setError("Invalid username or password");
-        } else if (err.response?.status === 422) {
-          setError("Please provide both a username and password.");
-        } else {
-          setError("Login failed. Please check your connection and try again.");
-        }
-      } else {
+      if (isApiError(err) && (err.status === 400 || err.status === 401)) {
         setError("Invalid username or password");
+      } else if (isApiError(err) && err.status === 422) {
+        setError("Please provide both a username and password.");
+      } else {
+        setError("Login failed. Please check your connection and try again.");
       }
     } finally {
       setLoading(false);

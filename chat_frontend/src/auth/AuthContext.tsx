@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { setUnauthorizedHandler } from "../api";
+import { setUnauthorizedHandler } from "../apiClient";
 import { AuthContext } from "./context";
 import {
   clearStoredToken,

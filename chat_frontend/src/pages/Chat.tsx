@@ -1,122 +1,68 @@
 import { useEffect, useRef, useState } from "react";
-import axios from "axios";
-import { connectWebSocket, deleteMessage, getMessages, sendMessage } from "../api";
+import { connectWebSocket } from "../api";
+import { isUnauthorized } from "../apiClient";
 import { useAuth } from "../auth/useAuth";
 import MessageList from "../components/MessageList";
 import Navbar from "../components/Navbar";
-import { mergeMessages } from "../messages";
-import type { Message } from "../types";
+import {
+  useAppendSocketMessage,
+  useDeleteMessage,
+  useMessageFeed,
+  useSendMessage,
+} from "../queries/messages";
 
-const PAGE_SIZE = 100;
+/** A session-wide error is already handled by `AuthProvider` (F5); it needs no banner. */
+function errorText(error: unknown, fallback: string): string {
+  return error && !isUnauthorized(error) ? fallback : "";
+}
 
 export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
-  const [hasOlderMessages, setHasOlderMessages] = useState(false);
-  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-  const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState("");
-  const [deletingMessageId, setDeletingMessageId] = useState<number | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const ws = useRef<WebSocket | null>(null);
   const { token, userId } = useAuth();
 
+  const feed = useMessageFeed(userId);
+  const appendSocketMessage = useAppendSocketMessage(userId);
+  const sendMessage = useSendMessage(userId);
+  const deleteMessage = useDeleteMessage(userId);
+
   useEffect(() => {
     if (!token || userId === null) return;
 
-    ws.current = connectWebSocket(
-      (message) =>
-        setMessages((current) => mergeMessages(current, [message])),
-      token
-    );
-
-    setIsLoadingMessages(true);
-    setError("");
-
-    void getMessages({ limit: PAGE_SIZE })
-      .then((response) => {
-        setMessages((current) => mergeMessages(current, response.data));
-        setHasOlderMessages(response.data.length === PAGE_SIZE);
-      })
-      .catch((err: unknown) => {
-        if (!axios.isAxiosError(err) || err.response?.status !== 401) {
-          setError("Failed to load messages. Please try again.");
-        }
-      })
-      .finally(() => {
-        setIsLoadingMessages(false);
-      });
+    ws.current = connectWebSocket(appendSocketMessage, token);
 
     return () => {
       ws.current?.close();
     };
-  }, [token, userId]);
+  }, [appendSocketMessage, token, userId]);
+
+  // While the delete request is in flight its variables name the row to disable.
+  const deletingMessageId = deleteMessage.isPending ? deleteMessage.variables ?? null : null;
+  const error =
+    errorText(sendMessage.error, "Failed to send message. Please try again.") ||
+    errorText(deleteMessage.error, "Failed to delete message. Please try again.") ||
+    errorText(feed.isOlderError ? feed.error : null, "Failed to load older messages.") ||
+    errorText(feed.error, "Failed to load messages. Please try again.");
 
   const loadOlderMessages = async () => {
-    const oldest = messages[0];
-    if (!oldest || isLoadingOlder || !hasOlderMessages) return;
+    const feedElement = feedRef.current;
+    const previousHeight = feedElement?.scrollHeight ?? 0;
+    const previousTop = feedElement?.scrollTop ?? 0;
 
-    const feed = feedRef.current;
-    const previousHeight = feed?.scrollHeight ?? 0;
-    const previousTop = feed?.scrollTop ?? 0;
-    setIsLoadingOlder(true);
-    setError("");
+    await feed.loadOlder();
 
-    try {
-      const response = await getMessages({
-        limit: PAGE_SIZE,
-        before: oldest.timestamp,
-        beforeId: oldest.id,
+    // Keep the viewport anchored on the message the user was reading.
+    if (feedElement) {
+      window.requestAnimationFrame(() => {
+        feedElement.scrollTop = previousTop + feedElement.scrollHeight - previousHeight;
       });
-      setMessages((current) => mergeMessages(current, response.data));
-      setHasOlderMessages(response.data.length === PAGE_SIZE);
-
-      if (feed) {
-        window.requestAnimationFrame(() => {
-          feed.scrollTop = previousTop + feed.scrollHeight - previousHeight;
-        });
-      }
-    } catch (err: unknown) {
-      if (!axios.isAxiosError(err) || err.response?.status !== 401) {
-        setError("Failed to load older messages.");
-      }
-    } finally {
-      setIsLoadingOlder(false);
     }
   };
 
-  const handleDelete = async (messageId: number) => {
-    if (deletingMessageId !== null) return;
-    setDeletingMessageId(messageId);
-    setError("");
-    try {
-      await deleteMessage(messageId);
-      setMessages((current) => current.filter((message) => message.id !== messageId));
-    } catch (err: unknown) {
-      if (!axios.isAxiosError(err) || err.response?.status !== 401) {
-        setError("Failed to delete message. Please try again.");
-      }
-    } finally {
-      setDeletingMessageId(null);
-    }
-  };
-
-  const handleSend = async () => {
-    if (!input.trim() || isSending) return;
-    setIsSending(true);
-    setError("");
-    try {
-      const response = await sendMessage({ text: input });
-      setMessages((current) => mergeMessages(current, [response.data]));
-      setInput("");
-    } catch (err: unknown) {
-      if (!axios.isAxiosError(err) || err.response?.status !== 401) {
-        setError("Failed to send message. Please try again.");
-      }
-    } finally {
-      setIsSending(false);
-    }
+  const handleSend = () => {
+    if (!input.trim() || sendMessage.isPending) return;
+    sendMessage.mutate(input, { onSuccess: () => setInput("") });
   };
 
   return (
@@ -129,43 +75,43 @@ export default function Chat() {
             {error}
           </div>
         )}
-        {hasOlderMessages && (
+        {feed.hasOlderMessages && (
           <button
             type="button"
             onClick={() => void loadOlderMessages()}
-            disabled={isLoadingOlder}
+            disabled={feed.isFetchingOlder}
             className="border px-3 py-1 mb-2 disabled:opacity-50"
           >
-            {isLoadingOlder ? "Loading..." : "Load older messages"}
+            {feed.isFetchingOlder ? "Loading..." : "Load older messages"}
           </button>
         )}
         <MessageList
-          messages={messages}
+          messages={feed.messages}
           currentUserId={userId}
           deletingMessageId={deletingMessageId}
-          onDeleteMessage={(id) => void handleDelete(id)}
+          onDeleteMessage={(id) => deleteMessage.mutate(id)}
           feedRef={feedRef}
-          isLoading={isLoadingMessages}
+          isLoading={feed.isLoading}
         />
         <input
           aria-label="Message"
           className="border p-2 w-3/4"
           value={input}
-          disabled={isSending}
+          disabled={sendMessage.isPending}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              void handleSend();
+              handleSend();
             }
           }}
         />
         <button
           onClick={handleSend}
-          disabled={isSending || !input.trim()}
+          disabled={sendMessage.isPending || !input.trim()}
           className="bg-blue-600 text-white px-4 py-2 ml-2 disabled:opacity-50"
         >
-          {isSending ? "Sending..." : "Send"}
+          {sendMessage.isPending ? "Sending..." : "Send"}
         </button>
       </div>
     </div>

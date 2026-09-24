@@ -1,72 +1,41 @@
-import axios, { type AxiosError } from "axios";
+import { apiDelete, apiGet, apiPost } from "./apiClient";
 import type {
   Message,
   MessagePageParams,
   SentimentResult,
   SummaryResult,
   TokenResponse,
+  User,
 } from "./types";
-
-type UnauthorizedHandler = () => void;
-
-let unauthorizedHandler: UnauthorizedHandler | null = null;
-
-export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
-  unauthorizedHandler = handler;
-}
-
-// Same-origin: dev traffic goes through the Vite proxy; production through nginx.
-const API = axios.create({ baseURL: "/" });
-
-API.interceptors.request.use((request) => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    request.headers.Authorization = `Bearer ${token}`;
-  }
-  return request;
-});
-
-API.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError) => {
-    const isLoginRequest = error.config?.url === "/users/login";
-    if (error.response?.status === 401 && !isLoginRequest) {
-      unauthorizedHandler?.();
-    }
-    return Promise.reject(error);
-  }
-);
 
 // --- Auth ---
 export const registerUser = (data: { username: string; password: string }) =>
-  API.post("/users/register", data);
+  apiPost<User>("/users/register", data);
 
 export const loginUser = (data: { username: string; password: string }) =>
-  API.post<TokenResponse>("/users/login", new URLSearchParams(data), {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  apiPost<TokenResponse>("/users/login", new URLSearchParams(data), {
+    skipUnauthorizedHandler: true,
   });
 
 // --- Messages ---
 export const getMessages = (params?: MessagePageParams) =>
-  API.get<Message[]>("/messages/", {
-    params: params
-      ? {
-          limit: params.limit,
-          before: params.before,
-          before_id: params.beforeId,
-        }
-      : undefined,
+  apiGet<Message[]>("/messages/", {
+    limit: params?.limit,
+    before: params?.before,
+    before_id: params?.beforeId,
   });
+
 export const sendMessage = (data: { text: string }) =>
-  API.post<Message>("/messages/", data);
+  apiPost<Message>("/messages/", data);
+
 export const deleteMessage = (messageId: number) =>
-  API.delete<{ detail: string }>(`/messages/${messageId}`);
+  apiDelete<{ detail: string }>(`/messages/${messageId}`);
 
 // --- Analytics ---
 export const analyzeSentiment = (text: string) =>
-  API.post<SentimentResult>("/analytics/sentiment", { text });
+  apiPost<SentimentResult>("/analytics/sentiment", { text });
 
-export const getDailySummary = () => API.get<SummaryResult>("/analytics/daily");
+export const getDailySummary = () => apiGet<SummaryResult>("/analytics/daily");
 
 export function connectWebSocket(
   onMessage: (msg: Message) => void,
