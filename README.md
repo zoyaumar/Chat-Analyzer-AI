@@ -72,8 +72,8 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Auth | `GET /users/me` profile lookup | ✅ | — |
 | Auth | Refresh tokens + server-side logout | 🔨 | M4 |
 | Chat | Send a message (REST, persisted) | ✅ | — |
-| Chat | List messages | ✅ auth-required and scoped to the sender; no pagination in the UI yet | pagination in M2 (B10) |
-| Chat | Delete your own message | 🟡 API only, no UI control | M2 |
+| Chat | List messages | ✅ auth-required, user-scoped, bounded keyset API with load-older UI | — |
+| Chat | Delete your own message | ✅ owner-only control; confirmed deletion is removed from the feed | — |
 | Chat | Realtime delivery | 🟡 authenticated JSON echo only: no persistence, no fan-out — **deliberately kept and finished in M2** | M2 |
 | Analytics | Sentiment analysis | 🟡 works with lazy model loading; results are not stored | M3 |
 | Analytics | Daily summary | 🟡 scoped to the authenticated user; uses a half-open UTC day range | M3 (quality work) |
@@ -180,7 +180,7 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Same-origin access | Vite dev proxy + nginx `web` container in production | in place (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
-| Tests | Vitest + React Testing Library | in use (3 auth-guard tests) |
+| Tests | Vitest + React Testing Library | in use (6 tests: auth, message merge and delete UI) |
 
 ## Repository layout
 
@@ -317,7 +317,7 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 | `npm run dev` | `chat_frontend/` | Vite dev server with HMR |
 | `npm run build` | `chat_frontend/` | type-check (`tsc -b`) + production bundle |
 | `npm run lint` | `chat_frontend/` | ESLint over the SPA |
-| `npm test` | `chat_frontend/` | Vitest suite (3 auth-guard tests) |
+| `npm test` | `chat_frontend/` | Vitest suite (6 tests: auth, message merge and delete UI) |
 | `py -m compileall chat_backend` | repo root | quick syntax check of the backend |
 
 ## Definition of shippable
@@ -462,7 +462,7 @@ revocation list becomes possible later (gaps S7/Q9).
 | Method | Path | Auth | Request | Response |
 | --- | --- | --- | --- | --- |
 | `POST` | `/messages/` | Bearer | JSON `{ "text": str }` — the sender comes from the token | `Message` |
-| `GET` | `/messages/` | Bearer | query `skip`, `limit` | `[Message]` |
+| `GET` | `/messages/` | Bearer | query `limit=1..100`, optional `before` + `before_id` cursor | `[Message]` |
 | `DELETE` | `/messages/{message_id}` | Bearer | – | `{ "detail": "Message deleted" }` |
 
 `Message` payload:
@@ -489,13 +489,11 @@ Failure modes: `401` when the token is missing/expired; `404 Message not found o
 when deleting someone else's message.
 </details>
 
-Two things change in M1/M2 here:
-
-- `GET /messages/` requires the bearer token and returns only the calling user's messages.
-  Still pending: keyset pagination (gap **B10**).
-- The routes declare response models (`MessageOut`), so the contract shows up in OpenAPI
-  instead of depending on ORM serialisation (gap **B3**), and the client stops sending a
-  `user_id` that the API ignores.
+The current message API is protected and user-scoped. It supports bounded keyset pagination
+(`before` + `before_id`) with a **Load older messages** control, merges REST and socket results
+by `id`, and lets an owner delete their own message from the feed. The routes declare
+response models (`MessageOut`), so the contract appears in OpenAPI, and the client never sends
+a `user_id` that the API ignores.
 
 ### Analytics
 
@@ -607,7 +605,7 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 22 passing (needs a Postgres; see below) |
+| Backend tests | `py -m pytest` | ✅ 24 passing (needs a Postgres; see below) |
 | Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | 🔨 M1 (T3) |
@@ -631,8 +629,9 @@ by default (override with `TEST_DATABASE_URL`), creates the schema from metadata
 `TRUNCATE`s between tests.
 
 **Frontend test suite.** Vitest + React Testing Library + jsdom cover unauthenticated route
-redirects, valid-token access and token-expiry handling. API-level UI tests (login and composer)
-remain planned with the `fetch`/TanStack Query data-layer migration.
+redirects, valid-token access, token-expiry handling, REST/socket message de-duplication and the
+owner-only delete interaction. Broader API-level UI tests (login and composer) remain planned
+with the `fetch`/TanStack Query data-layer migration.
 
 ## Milestones & roadmap
 
@@ -653,7 +652,7 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | ~~One settings object; fail fast without `SECRET_KEY`~~ ✅; honour `iat`/`jti` later | B6 ✅, S5 🟡 |
 | ~~One pinned dependency list + `pyproject.toml` + `ruff`~~ ✅; `mypy` still open | D8, T3 🟡, T4, A5 |
 | Docker + Compose (`db`, `api`, `web`) with migrations on start ✅ | O13 ✅ |
-| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (22 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
+| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (24 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
 | ~~`/health` + `/health/ready`; retire the public `/test-db` diagnostics~~ ✅ | B8 ✅, O5 🟡 |
 
 **M2 — Realtime as a first-class channel**
@@ -662,11 +661,11 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | --- | --- |
 | WebSocket: authenticated handshake; move the token out of the query string | S1, S8 |
 | Persist socket messages through the service layer and broadcast JSON | B1, B12 |
-| Client: reconnect with backoff, de-duplication, connection state, defensive parsing | F3, F11 |
+| Client: reconnect with backoff, connection state and defensive parsing | F3, F11 |
 | ~~Protected routes, 401 interceptor, expiry UX, `AuthProvider`~~ ✅ | F4, F5, Q29 |
 | `fetch` client + TanStack Query for loading/error/empty states | F9, F14, F16 |
-| Pagination ("load older") and delete-message UI | F6, B10 |
-| ~~Frontend auth tests (Vitest + RTL)~~ ✅ (3 passing); API interaction tests remain | T2 |
+| ~~Keyset pagination, load-older UI, owner-only delete UI and `id`-based merge~~ ✅ | B10 ✅, F6 |
+| ~~Frontend auth, merge and delete-UI tests (Vitest + RTL)~~ ✅ (6 passing); API interaction tests remain | T2 |
 
 **M3 — AI, done right**
 
@@ -685,7 +684,7 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | Refresh tokens, server-side logout, `HttpOnly` cookie session | S7, Q5, Q9 |
 | Password/username policy, rate limiting on login and register | S6 |
 | Tailwind design tokens, shared UI primitives, accessibility pass | F12 |
-| Types generated from OpenAPI; delete dead files and template leftovers | F13, F7, F8 |
+| Types generated from OpenAPI; delete dead files and template leftovers | F13 follow-up, F7, F8 |
 | Redis pub/sub (or `LISTEN/NOTIFY`) for multi-instance fan-out | Q18 |
 | Feature work: rooms/DMs, presence, typing indicators, read receipts, search, attachments | P1–P15 |
 

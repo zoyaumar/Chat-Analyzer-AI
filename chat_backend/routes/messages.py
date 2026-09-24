@@ -1,6 +1,8 @@
 # routes/messages.py
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from chat_backend import models, schemas
@@ -26,17 +28,35 @@ async def create_message(
 @router.get("/", response_model=list[schemas.MessageOut])
 async def list_messages(
     db: AsyncSession = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=100),
+    before: datetime | None = Query(default=None),
+    before_id: int | None = Query(default=None, ge=1),
     current_user: models.User = Depends(get_current_user),
 ):
+    """Return a chronological page, with an optional keyset cursor for older messages."""
+    if (before is None) != (before_id is None):
+        raise HTTPException(status_code=400, detail="before and before_id must be used together")
+    if before is not None and before.tzinfo is None:
+        raise HTTPException(status_code=400, detail="before must include a timezone")
+
+    query = select(models.Message).where(models.Message.user_id == current_user.id)
+    if before is not None:
+        query = query.where(
+            or_(
+                models.Message.timestamp < before,
+                and_(
+                    models.Message.timestamp == before,
+                    models.Message.id < before_id,
+                ),
+            )
+        )
+
     result = await db.execute(
-        select(models.Message)
-        .where(models.Message.user_id == current_user.id)
-        .offset(skip)
-        .limit(limit)
+        query.order_by(models.Message.timestamp.desc(), models.Message.id.desc()).limit(limit)
     )
-    return result.scalars().all()
+    messages = list(result.scalars().all())
+    messages.reverse()
+    return messages
 
 
 @router.delete("/{message_id}")

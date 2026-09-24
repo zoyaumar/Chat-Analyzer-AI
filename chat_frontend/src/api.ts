@@ -1,5 +1,11 @@
 import axios, { type AxiosError } from "axios";
-import type { TokenResponse, Message, SentimentResult, SummaryResult } from "./types";
+import type {
+  Message,
+  MessagePageParams,
+  SentimentResult,
+  SummaryResult,
+  TokenResponse,
+} from "./types";
 
 type UnauthorizedHandler = () => void;
 
@@ -41,9 +47,20 @@ export const loginUser = (data: { username: string; password: string }) =>
   });
 
 // --- Messages ---
-export const getMessages = () => API.get<Message[]>("/messages/");
+export const getMessages = (params?: MessagePageParams) =>
+  API.get<Message[]>("/messages/", {
+    params: params
+      ? {
+          limit: params.limit,
+          before: params.before,
+          before_id: params.beforeId,
+        }
+      : undefined,
+  });
 export const sendMessage = (data: { text: string }) =>
   API.post<Message>("/messages/", data);
+export const deleteMessage = (messageId: number) =>
+  API.delete<{ detail: string }>(`/messages/${messageId}`);
 
 // --- Analytics ---
 export const analyzeSentiment = (text: string) =>

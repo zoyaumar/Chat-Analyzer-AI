@@ -65,3 +65,40 @@ async def test_delete_message_ownership(client: AsyncClient, user_and_token):
     resp = await client.delete(f"/messages/{mid}", headers=_auth(token))
     assert resp.status_code == 200
     assert (await client.get("/messages/", headers=_auth(token))).json() == []
+
+
+async def test_messages_validate_pagination_parameters(client: AsyncClient, user_and_token):
+    _, _, token = user_and_token
+    for params, expected_status in (
+        ({"limit": 0}, 422),
+        ({"limit": 101}, 422),
+        ({"before": "2026-01-01T00:00:00Z"}, 400),
+    ):
+        response = await client.get(
+            "/messages/", params=params, headers=_auth(token)
+        )
+        assert response.status_code == expected_status
+
+
+async def test_messages_use_keyset_cursor_for_older_pages(client: AsyncClient, user_and_token):
+    _, _, token = user_and_token
+    for text in ("first", "second", "third", "fourth"):
+        response = await client.post(
+            "/messages/", json={"text": text}, headers=_auth(token)
+        )
+        assert response.status_code == 200
+
+    newest_page = await client.get(
+        "/messages/", params={"limit": 2}, headers=_auth(token)
+    )
+    assert newest_page.status_code == 200
+    assert [message["text"] for message in newest_page.json()] == ["third", "fourth"]
+
+    oldest = newest_page.json()[0]
+    older_page = await client.get(
+        "/messages/",
+        params={"limit": 2, "before": oldest["timestamp"], "before_id": oldest["id"]},
+        headers=_auth(token),
+    )
+    assert older_page.status_code == 200
+    assert [message["text"] for message in older_page.json()] == ["first", "second"]

@@ -7,7 +7,13 @@ export interface Message {
   id: number;
   text: string;
   user_id: number;
-  created_at: string;
+  timestamp: string;
+}
+
+export interface MessagePageParams {
+  limit?: number;
+  before?: string;
+  beforeId?: number;
 }
 
 export interface TokenResponse {

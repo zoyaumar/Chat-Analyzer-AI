@@ -31,7 +31,9 @@ uses same-origin relative URLs; `VITE_DEV_API_TARGET` can override the proxy tar
 ```
 src/
 ├── api.ts                  # axios client + 401 callback, endpoint wrappers, WS connector
-├── types.ts                # User, Message, TokenResponse, SentimentResult, SummaryResult
+├── messages.ts              # chronological, id-based REST/socket merge helper
+├── messages.test.ts         # focused merge-helper tests
+├── types.ts                 # User, Message, pagination params, API response types
 ├── App.tsx                 # BrowserRouter + protected route table
 ├── main.tsx                # React root
 ├── index.css               # `@import "tailwindcss";`
@@ -39,11 +41,12 @@ src/
 ├── components/
 │   ├── Navbar.tsx          # links + logout through AuthProvider
 │   └── MessageList.tsx     # currently empty — extract the message list from Chat.tsx here
-└── pages/
-    ├── Login.tsx           # POST /users/login -> AuthProvider -> /chat
-    ├── Register.tsx        # POST /users/register -> /login
-    ├── Chat.tsx            # message feed, composer, WebSocket connection
-    └── Analytics.tsx       # sentiment form + daily summary button
+├── pages/
+│   ├── Login.tsx           # POST /users/login -> AuthProvider -> /chat
+│   ├── Register.tsx        # POST /users/register -> /login
+│   ├── Chat.tsx            # paginated feed, owner-only delete, composer, WebSocket connection
+│   ├── Chat.test.tsx       # owner-only delete interaction test
+│   └── Analytics.tsx       # sentiment form + daily summary button
 ```
 
 ## Routing
@@ -65,7 +68,11 @@ Tailwind CSS 4 is wired through the `@tailwindcss/vite` plugin in `vite.config.t
 ## State & auth
 
 - The JWT lives in `localStorage` under the key `token`.
-- `api.ts` attaches it as `Authorization: Bearer <token>` via a request interceptor.
+- `api.ts` attaches it as `Authorization: Bearer <token>` via a request interceptor, maps
+  `MessagePageParams` to the API's `before`/`before_id` query parameters, and exposes the
+  owner-only delete call.
+- `messages.ts` merges paginated REST results and socket frames by `id`, preserving chronological
+  order so a message cannot appear twice when two delivery paths overlap.
 - `AuthProvider` validates the token, owns the current user id, schedules expiry and handles
   non-login 401 responses; `RequireAuth` protects private routes.
 - `Login.tsx` stores the token through the provider and shows a session-expired notice.
