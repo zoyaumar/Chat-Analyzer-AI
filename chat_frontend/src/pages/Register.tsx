@@ -1,4 +1,5 @@
 import { useState } from "react";
+import axios from "axios";
 import { registerUser } from "../api";
 import { useNavigate } from "react-router-dom";
 
@@ -16,11 +17,20 @@ export default function Register() {
 
     try {
       await registerUser({ username, password });
-      // Redirect to login page after successful registration
       navigate("/login");
-    } catch (err) {
-      console.error("Registration failed", err);
-      setError("Failed to register. Please try again.");
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        const detail = err.response?.data?.detail;
+        if (typeof detail === "string") {
+          setError(detail);
+        } else if (err.response?.status === 400 || err.response?.status === 422) {
+          setError("Invalid registration details. Please check your username and password.");
+        } else {
+          setError("Registration failed. Please try again later.");
+        }
+      } else {
+        setError("Failed to register. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -32,12 +42,14 @@ export default function Register() {
 
       <form onSubmit={handleRegister} className="flex flex-col gap-3 w-64">
         <input
+          aria-label="Username"
           className="border p-2"
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
         <input
+          aria-label="Password"
           type="password"
           className="border p-2"
           placeholder="Password"
@@ -46,14 +58,18 @@ export default function Register() {
         />
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !username.trim() || !password}
           className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
         >
           {loading ? "Registering..." : "Register"}
         </button>
       </form>
 
-      {error && <p className="text-red-500 mt-2">{error}</p>}
+      {error && (
+        <p role="alert" className="text-red-500 mt-2 max-w-xs text-center text-sm">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import axios from "axios";
 import { useLocation, useNavigate } from "react-router-dom";
 import { loginUser } from "../api";
 import { useAuth } from "../auth/useAuth";
@@ -27,8 +28,18 @@ export default function Login() {
       const response = await loginUser({ username, password });
       signIn(response.data.access_token);
       navigate("/chat");
-    } catch {
-      setError("Invalid username or password");
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 400 || err.response?.status === 401) {
+          setError("Invalid username or password");
+        } else if (err.response?.status === 422) {
+          setError("Please provide both a username and password.");
+        } else {
+          setError("Login failed. Please check your connection and try again.");
+        }
+      } else {
+        setError("Invalid username or password");
+      }
     } finally {
       setLoading(false);
     }
@@ -56,7 +67,7 @@ export default function Login() {
         />
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !username.trim() || !password}
           className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
         >
           {loading ? "Logging in..." : "Login"}

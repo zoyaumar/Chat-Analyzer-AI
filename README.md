@@ -663,7 +663,7 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | Persist socket messages through the service layer and broadcast JSON | B1, B12 |
 | Client: reconnect with backoff, connection state and defensive parsing | F3, F11 |
 | ~~Protected routes, 401 interceptor, expiry UX, `AuthProvider`~~ ✅ | F4, F5, Q29 |
-| `fetch` client + TanStack Query for loading/error/empty states | F9, F14, F16 |
+| `fetch` client + TanStack Query caching (explicit loading/error/empty states now in place ✅) | F9 ✅, F14, F16 |
 | ~~Keyset pagination, load-older UI, owner-only delete UI and `id`-based merge~~ ✅ | B10 ✅, F6 |
 | ~~Frontend auth, merge and delete-UI tests (Vitest + RTL)~~ ✅ (6 passing); API interaction tests remain | T2 |
 
