@@ -213,6 +213,7 @@ Chat-Analyzer-AI/
 │   ├── auth_utils.py              # password hashing, PyJWT encode/decode, get_current_user
 │   ├── ai_utils.py                # NLP helpers; lazy-loaded and pushed to M3 packaging
 │   ├── crud.py                    # service layer shared by REST and the WebSocket handler
+│   ├── observability.py           # JSON-lines logging + X-Request-ID middleware (O5)
 │   └── routes/
 │       ├── users.py               # POST /users/register, POST /users/login, GET /users/me
 │       ├── messages.py            # POST /messages/, GET /messages/, DELETE /messages/{id}
@@ -352,7 +353,7 @@ deploy. It is done when all of the following are true:
 | `DATABASE_URL_SYNC` | no | derived from `DATABASE_URL` | Sync URL (`postgresql+psycopg://…`) used only by Alembic, which runs migrations outside the async engine (M1). |
 | `SECRET_KEY` | yes | – | HMAC key used to sign JWTs. There is no insecure fallback; startup fails when it is missing. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Token lifetime, read through the settings object. |
-| `DEBUG` | no | `false` | Reserved for local diagnostics; it does not expose the removed `/test-db` route. |
+| `DEBUG` | no | `false` | Sets the JSON log level to DEBUG (O5); it does not expose the removed `/test-db` route. |
 | `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (M3, replaces `facebook/bart-large-cnn`). |
 | `AI_INFERENCE_URL` | no | – | Base URL of a separate inference service (M3) — only relevant once the packaging decision (U4) is settled. |
 | `VITE_DEV_API_TARGET` | no | `http://127.0.0.1:8000` | Optional Vite dev-proxy target for the API. The browser still uses same-origin relative URLs. |
@@ -604,6 +605,7 @@ Requirements for any host:
 | Environment variables | See [Environment variables](#environment-variables); nothing is baked into the image. |
 | TLS termination | Any reverse proxy or load balancer; the API itself speaks plain HTTP. |
 | Health probes | `/health` (liveness) and `/health/ready` (database + model readiness) in M1. |
+| Structured logs | JSON lines on stdout, one object per line, correlated by `X-Request-ID` (O5). |
 | Persistent volume | Only if the NLP model cache lives in the container (M3 packaging decision). |
 
 Any small VPS or container host with Compose installed is enough: `docker compose up -d --build`.
@@ -615,17 +617,18 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 42 passing (needs a Postgres; see below) |
+| Backend tests | `py -m pytest` | ✅ 50 passing (needs a Postgres; see below) |
 | Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
-| Backend type-check | `mypy` | 🔨 M1 (T3) |
+| Backend type-check | `mypy` | ✅ clean (non-strict + pydantic/SQLAlchemy plugins) |
 | Frontend tests | `cd chat_frontend && npm test` | ✅ 45 passing (8 files) |
 | CI (all of the above on every push) | GitHub Actions | ✅ backend + frontend jobs |
 
 **Backend test suite.** `tests/` covers register/login (happy path, duplicate username, wrong
 password), `GET /users/me` (with/without token), message create/list/delete with
 ownership checks, analytics with monkeypatched models (no weights downloaded), daily-summary
-user scoping, and the WebSocket accept/reject/echo paths. The suite runs against a real
+user scoping, the WebSocket accept/reject/echo paths, and the structured-logging layer
+(JSON formatter, `X-Request-ID` echo, access-log correlation). The suite runs against a real
 PostgreSQL — start a disposable one with:
 
 ```bash
@@ -663,10 +666,10 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | ~~Alembic as the only schema owner; real initial migration; remove `create_all()`~~ ✅ | D1, D2, B9, D11 |
 | ~~Message response models and bounded input~~ ✅ | B3 |
 | ~~One settings object; fail fast without `SECRET_KEY`~~ ✅; honour `iat`/`jti` later | B6 ✅, S5 🟡 |
-| ~~One pinned dependency list + `pyproject.toml` + `ruff`~~ ✅; `mypy` still open | D8, T3 🟡, T4, A5 |
+| ~~One pinned dependency list + `pyproject.toml` + `ruff` + `mypy`~~ ✅ | D8, T3 ✅, T4, A5 |
 | Docker + Compose (`db`, `api`, `web`) with migrations on start ✅ | O13 ✅ |
-| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (42 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
-| ~~`/health` + `/health/ready`; retire the public `/test-db` diagnostics~~ ✅ | B8 ✅, O5 🟡 |
+| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (50 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
+| ~~`/health` + `/health/ready`; retire the public `/test-db`; JSON logging + request ids~~ ✅ | B8 ✅, O5 ✅ |
 
 **M2 — Realtime as a first-class channel**
 

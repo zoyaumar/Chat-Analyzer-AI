@@ -36,6 +36,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Lint
         run: ruff check chat_backend tests alembic
+      - name: Type-check
+        run: mypy
       - name: Apply migrations to a fresh database
         run: alembic upgrade head
       - name: Test

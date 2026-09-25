@@ -115,8 +115,11 @@ async def _handle_frame(websocket: WebSocket, user_id: int, raw: str) -> None:
 
     # The same model the REST route validates with, so both transports accept and
     # reject exactly the same text, length limit included (Q38).
+    text = frame.get("text")
+    if not isinstance(text, str):
+        raise FrameError("text must be a string of at most 4000 characters")
     try:
-        payload = schemas.MessageCreate(text=frame.get("text"))
+        payload = schemas.MessageCreate(text=text)
     except ValidationError as exc:
         raise FrameError("text must be a string of at most 4000 characters") from exc
 

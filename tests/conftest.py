@@ -62,7 +62,8 @@ async def client():
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
+    # httpx's ASGI protocol type does not match FastAPI.__call__'s overloads.
+    transport = ASGITransport(app=app)  # type: ignore[arg-type]
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     # Remove only our own override: another fixture may have registered its own.
