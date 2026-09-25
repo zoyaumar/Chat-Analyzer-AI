@@ -24,7 +24,7 @@ uses same-origin relative URLs; `VITE_DEV_API_TARGET` can override the proxy tar
 | `npm run build` | `tsc -b` type-check, then production bundle into `dist/` |
 | `npm run preview` | Serve the built bundle locally |
 | `npm run lint` | ESLint 9 (flat config) over the whole project |
-| `npm run test` | Vitest (jsdom) — auth guards, message merge, composer/delete UI, analytics, `fetch` client, query policy, realtime socket hook, wire protocol |
+| `npm run test` | Vitest (jsdom) — auth guards, message merge, composer/delete UI, analytics, `fetch` client, query policy, realtime socket hook, wire protocol, MSW page-level Chat tests, CSP baseline |
 
 ## Source layout
 
@@ -54,7 +54,7 @@ src/
 ├── components/
 │   ├── Navbar.tsx          # links + logout through AuthProvider
 │   └── MessageList.tsx     # feed with loading/empty states, owner-only delete control
-├── test/                   # Vitest setup + renderWithQueryClient helper
+├── test/                   # Vitest setup, renderWithQueryClient, MSW handlers, CSP test
 └── pages/
     ├── Login.tsx           # POST /users/login -> AuthProvider -> /chat
     ├── Register.tsx        # POST /users/register -> /login

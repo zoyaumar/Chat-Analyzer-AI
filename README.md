@@ -70,6 +70,7 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Auth | Login → signed JWT (HS256, `PyJWT`, configurable lifetime) | ✅ | — |
 | Auth | Bearer-token guard on protected endpoints | ✅ | — |
 | Auth | `GET /users/me` profile lookup | ✅ | — |
+| Auth | Account deletion (`DELETE /users/me`, messages cascade) | ✅ | — |
 | Auth | Refresh tokens + server-side logout | 🔨 | M4 |
 | Chat | Send a message (REST, persisted) | ✅ | — |
 | Chat | List messages | ✅ auth-required, user-scoped, bounded keyset API with load-older UI | — |
@@ -182,7 +183,7 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Same-origin access | Vite dev proxy + nginx `web` container in production | in place (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
-| Tests | Vitest + React Testing Library | in use (45 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy) |
+| Tests | Vitest + React Testing Library + MSW | in use (52 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, MSW page-level) |
 
 ## Repository layout
 
@@ -225,7 +226,7 @@ Chat-Analyzer-AI/
 │   │   ├── apiClient.ts           # typed fetch client: bearer token, query params, ApiError
 │   │   ├── realtime/              # useChatSocket + protocol: first-frame auth, heartbeat, reconnect
 │   │   ├── queries/               # query keys, client policy and the message/analytics hooks
-│   │   ├── test/                  # Vitest setup + render helper with a QueryClient
+│   │   ├── test/                  # Vitest setup, QueryClient render helper, MSW handlers
 │   │   ├── types.ts               # shared TypeScript interfaces (M2: generated from OpenAPI)
 │   │   ├── App.tsx                # BrowserRouter + protected route table
 
@@ -323,7 +324,7 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 | `npm run dev` | `chat_frontend/` | Vite dev server with HMR |
 | `npm run build` | `chat_frontend/` | type-check (`tsc -b`) + production bundle |
 | `npm run lint` | `chat_frontend/` | ESLint over the SPA |
-| `npm test` | `chat_frontend/` | Vitest suite (45 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy) |
+| `npm test` | `chat_frontend/` | Vitest suite (52 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, MSW page-level, CSP baseline) |
 | `py -m compileall chat_backend` | repo root | quick syntax check of the backend |
 
 ## Definition of shippable
@@ -354,6 +355,10 @@ deploy. It is done when all of the following are true:
 | `SECRET_KEY` | yes | – | HMAC key used to sign JWTs. There is no insecure fallback; startup fails when it is missing. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Token lifetime, read through the settings object. |
 | `DEBUG` | no | `false` | Sets the JSON log level to DEBUG (O5); it does not expose the removed `/test-db` route. |
+| `DB_POOL_SIZE` | no | `5` | Base async SQLAlchemy pool size (D9). |
+| `DB_MAX_OVERFLOW` | no | `10` | Connections allowed beyond `DB_POOL_SIZE` before the pool blocks (D9). |
+| `DB_POOL_TIMEOUT` | no | `30` | Seconds to wait for a pooled connection before failing (D9). |
+| `DB_POOL_RECYCLE` | no | `1800` | Seconds before an idle connection is recycled, ahead of a pooler dropping it (D9). |
 | `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (M3, replaces `facebook/bart-large-cnn`). |
 | `AI_INFERENCE_URL` | no | – | Base URL of a separate inference service (M3) — only relevant once the packaging decision (U4) is settled. |
 | `VITE_DEV_API_TARGET` | no | `http://127.0.0.1:8000` | Optional Vite dev-proxy target for the API. The browser still uses same-origin relative URLs. |
@@ -430,6 +435,7 @@ use `http://127.0.0.1:8000` for the manual setup. Authenticated endpoints expect
 | `POST` | `/users/register` | – | JSON `{ "username": str, "password": str }` | `{ "id": int, "username": str }` |
 | `POST` | `/users/login` | – | `application/x-www-form-urlencoded` with `username`, `password` | `{ "access_token": str, "token_type": "bearer" }` |
 | `GET` | `/users/me` | Bearer | – | `{ "id": int, "username": str }` |
+| `DELETE` | `/users/me` | Bearer | – | `{ "detail": "Account deleted" }` — cascades the user's messages (D4) |
 
 <details>
 <summary>Register</summary>
@@ -606,6 +612,7 @@ Requirements for any host:
 | TLS termination | Any reverse proxy or load balancer; the API itself speaks plain HTTP. |
 | Health probes | `/health` (liveness) and `/health/ready` (database + model readiness) in M1. |
 | Structured logs | JSON lines on stdout, one object per line, correlated by `X-Request-ID` (O5). |
+| Security headers | CSP, `nosniff`, frame/referrer policy and HSTS on API and SPA responses (S11); HSTS is ignored by browsers over plain HTTP until TLS terminates. |
 | Persistent volume | Only if the NLP model cache lives in the container (M3 packaging decision). |
 
 Any small VPS or container host with Compose installed is enough: `docker compose up -d --build`.
@@ -617,17 +624,18 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 50 passing (needs a Postgres; see below) |
+| Backend tests | `py -m pytest` | ✅ 55 passing (needs a Postgres; see below) |
 | Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | ✅ clean (non-strict + pydantic/SQLAlchemy plugins) |
-| Frontend tests | `cd chat_frontend && npm test` | ✅ 45 passing (8 files) |
+| Frontend tests | `cd chat_frontend && npm test` | ✅ 52 passing (10 files) |
 | CI (all of the above on every push) | GitHub Actions | ✅ backend + frontend jobs |
 
 **Backend test suite.** `tests/` covers register/login (happy path, duplicate username, wrong
 password), `GET /users/me` (with/without token), message create/list/delete with
 ownership checks, analytics with monkeypatched models (no weights downloaded), daily-summary
-user scoping, the WebSocket accept/reject/echo paths, and the structured-logging layer
+user scoping, the WebSocket accept/reject/echo paths, account deletion with its cascade,
+security headers, and the structured-logging layer
 (JSON formatter, `X-Request-ID` echo, access-log correlation). The suite runs against a real
 PostgreSQL — start a disposable one with:
 
@@ -645,9 +653,10 @@ by default (override with `TEST_DATABASE_URL`), creates the schema from metadata
 redirects, valid-token access, token-expiry handling, REST/socket message de-duplication, the
 owner-only delete and composer interactions, the analytics actions, the keyset "load older" cursor,
 the `fetch` client (token header, query mapping, `ApiError`, 401 handler) and the TanStack Query
-retry policy — 45 tests across 8 files, including the `useChatSocket` hook (heartbeat, backoff,
-auth rejection, HTTP fallback) and the defensive `parseFrame` protocol tests. A dedicated
-login-form test remains open.
+retry policy — 52 tests across 10 files, including the `useChatSocket` hook (heartbeat, backoff,
+auth rejection, HTTP fallback), the defensive `parseFrame` protocol tests, MSW page-level tests
+that run the real `apiClient`/query stack against `src/test/handlers.ts`, and the index.html
+CSP baseline. A dedicated login-form test remains open.
 
 ## Milestones & roadmap
 
@@ -668,7 +677,7 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | ~~One settings object; fail fast without `SECRET_KEY`~~ ✅; honour `iat`/`jti` later | B6 ✅, S5 🟡 |
 | ~~One pinned dependency list + `pyproject.toml` + `ruff` + `mypy`~~ ✅ | D8, T3 ✅, T4, A5 |
 | Docker + Compose (`db`, `api`, `web`) with migrations on start ✅ | O13 ✅ |
-| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (50 passing); CI on every push ✅ | T1, T5-partial, O6 ✅ |
+| ~~Backend tests for auth, ownership and `/users/me`~~ ✅ (55 passing); CI on every push ✅ | T1 ✅, T5 ✅, O6 ✅ |
 | ~~`/health` + `/health/ready`; retire the public `/test-db`; JSON logging + request ids~~ ✅ | B8 ✅, O5 ✅ |
 
 **M2 — Realtime as a first-class channel**
@@ -683,7 +692,11 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | ~~Typed `fetch` client replacing axios, with tests~~ ✅ | F14 ✅, Q27 |
 | ~~TanStack Query for the server-state layer (keys, retries, mutations)~~ ✅ | F16 ✅, Q28 |
 | ~~Keyset pagination, load-older UI, owner-only delete UI and `id`-based merge~~ ✅ | B10 ✅, F6 |
-| ~~Frontend tests for auth, merge, delete/composer UI, analytics, socket hook, and query policy (Vitest + RTL)~~ ✅ (45 passing across 8 files) | T2 ✅ |
+| ~~Security headers: strict CSP on API, Swagger exception, SPA meta + nginx set~~ ✅ | S11 ✅ |
+| ~~`DELETE /users/me` with `ON DELETE CASCADE`; `Message.text` capped at 4000~~ ✅ | D4 ✅, D6 ✅ |
+| ~~Pooling: pre-ping, recycle, env-tunable size/overflow/timeout~~ ✅ | D9 ✅ |
+| ~~MSW handlers + page-level Chat tests over the real client stack~~ ✅ | T5 ✅, Q43 |
+| ~~Frontend tests for auth, merge, delete/composer UI, analytics, socket hook, query policy, MSW page-level~~ ✅ (52 passing across 10 files) | T2 ✅ |
 
 **M3 — AI, done right**
 

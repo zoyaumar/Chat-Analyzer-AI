@@ -31,8 +31,14 @@ TestSession = async_sessionmaker(engine, expire_on_commit=False)
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_schema():
-    """Create the schema from metadata once per session (test DB only)."""
+    """Rebuild the schema from metadata once per session (test DB only).
+
+    `drop_all` first: `create_all` alone silently keeps a stale schema when
+    the models change, which is exactly how a missing `ON DELETE CASCADE`
+    would go unnoticed (gaps D4/D6).
+    """
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()

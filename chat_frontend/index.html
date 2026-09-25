@@ -2,6 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      CSP baseline (gap S11). The meta tag is what every host inherits; nginx
+      adds a stricter header in production, and where both apply both are
+      enforced. `script-src 'unsafe-inline'` keeps the Vite dev server's React
+      Refresh preamble alive (the production header omits it — the built bundle
+      has no inline scripts), and the localhost `ws:` entries are the dev HMR
+      socket. `frame-ancestors` is ignored inside meta tags, so clickjacking
+      protection comes from the header.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chat Analyzer AI</title>

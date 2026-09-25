@@ -17,16 +17,23 @@ class User(Base):
     username: Mapped[str] = Column(String, unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = Column(String, nullable=False)
 
-    # One-to-many relationship with messages
-    messages: Mapped[list["Message"]] = relationship("Message", back_populates="user")
+    # One-to-many relationship with messages. `passive_deletes=True` + the
+    # FK's ON DELETE CASCADE (D4): deleting a user never loads the messages,
+    # the database removes them in the same statement.
+    messages: Mapped[list["Message"]] = relationship(
+        "Message", back_populates="user", passive_deletes=True
+    )
 
 
 class Message(Base):
     __tablename__ = "messages"
 
     id: Mapped[int] = Column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    text: Mapped[str] = Column(String, nullable=False)
+    user_id: Mapped[int] = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # 4000 matches `MessageCreate.text`'s Pydantic limit (gap D6/B3).
+    text: Mapped[str] = Column(String(4000), nullable=False)
     timestamp: Mapped[datetime] = Column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

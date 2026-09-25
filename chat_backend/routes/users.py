@@ -9,6 +9,7 @@ from chat_backend.database import get_db
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+
 @router.post("/login", response_model=schemas.Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -48,3 +49,20 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
 @router.get("/me", response_model=schemas.UserOut)
 async def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+
+@router.delete("/me")
+async def delete_users_me(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete the authenticated account and everything that belongs to it.
+
+    The messages go with it through the FK's `ON DELETE CASCADE` (gap D4); the
+    relationship's `passive_deletes=True` means this is a single `DELETE`, not
+    a load-then-delete of every message. The issued token dies with the user,
+    because `get_current_user` can no longer resolve it.
+    """
+    await db.delete(current_user)
+    await db.commit()
+    return {"detail": "Account deleted"}

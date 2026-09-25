@@ -1,9 +1,10 @@
 import logging
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from chat_backend.config import settings
 from chat_backend.database import get_db
@@ -16,6 +17,45 @@ from chat_backend.routes import analytics, messages, users, websocket
 setup_logging(logging.DEBUG if settings.debug else logging.INFO)
 logger = logging.getLogger("chat_backend.api")
 
+# --- Browser hardening (gap S11) ---
+# JSON responses get a locked-down CSP: nothing may load, embed or frame them.
+# The Swagger/ReDoc pages are real browser UIs and need the Swagger bundle and
+# its inline bootstrap, so they get the narrow policy that permits exactly that.
+_DOCS_PATHS = frozenset({"/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"})
+
+_STRICT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+_DOCS_CSP = (
+    "default-src 'none'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; "
+    "font-src 'self' data:; connect-src 'self'; "
+    "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Response headers for browser hardening (gap S11).
+
+    HSTS is emitted unconditionally: a browser ignores it over plain HTTP, so
+    it is inert on `localhost` and takes effect the moment TLS terminates
+    upstream.
+    """
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            _DOCS_CSP if request.url.path in _DOCS_PATHS else _STRICT_CSP
+        )
+        return response
+
 app = FastAPI(
     title="Chat Analyzer AI",
     description="Backend API for chat storage and analysis",
@@ -24,6 +64,7 @@ app = FastAPI(
 
 # No CORS middleware: the app is same-origin everywhere — Vite proxies in
 # development, nginx in production (gaps S4/F15, Q34).
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(users.router)
