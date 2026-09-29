@@ -22,6 +22,8 @@ export const mswState = {
   messages: [] as Message[],
   /** Every feed request the handler saw, oldest first. */
   feedRequests: [] as RecordedFeedRequest[],
+  /** Every user id the feed asked a name for (gap F10), oldest first. */
+  profileRequests: [] as number[],
 };
 
 let nextId = 1;
@@ -30,18 +32,27 @@ let nextId = 1;
 export function resetMswState(messages: Message[] = []): void {
   mswState.messages = [...messages].sort((a, b) => a.id - b.id);
   mswState.feedRequests = [];
+  mswState.profileRequests = [];
   nextId = Math.max(0, ...messages.map((m) => m.id)) + 1;
 }
 
 /** A message whose id and timestamp both ascend with `offsetSeconds`. */
-export function mswMessage(id: number, offsetSeconds: number, text = `Message ${id}`): Message {
+export function mswMessage(
+  id: number,
+  offsetSeconds: number,
+  text = `Message ${id}`,
+  userId = 1
+): Message {
   return {
     id,
-    user_id: 1,
+    user_id: userId,
     text,
     timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, offsetSeconds)).toISOString(),
   };
 }
+
+/** Usernames the profile endpoint knows; anything else is a 404 (gap F10). */
+const knownUsernames: Record<number, string> = { 1: "alice", 2: "bob" };
 
 export const handlers = [
   // Keyset pagination (B10): newest `limit` without a cursor, the page older
@@ -81,6 +92,19 @@ export const handlers = [
   }),
 
   http.get("/users/me", () => HttpResponse.json({ id: 1, username: "alice" })),
+
+  // Attribution (gap F10): a profile per author id, 404 for anyone unknown.
+  http.get("/users/:id", ({ params }) => {
+    const id = Number(params.id);
+    mswState.profileRequests.push(id);
+    const username = knownUsernames[id];
+    if (!username) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json({
+      id,
+      username,
+      created_at: new Date(Date.UTC(2026, 0, 1)).toISOString(),
+    });
+  }),
 
   http.post("/users/register", () => HttpResponse.json({ id: 2, username: "newuser" })),
 

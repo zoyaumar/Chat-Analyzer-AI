@@ -6,19 +6,51 @@ and neither transport keeps its own copy of the rules. Nothing in this module
 knows about HTTP, status codes or frames: rejecting a lone pagination cursor, or
 deciding what a client receives, is the transport's job.
 """
-
+import asyncio
+import logging
 from datetime import datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chat_backend import models
+from chat_backend import ai_utils, models
+
+logger = logging.getLogger("chat_backend.crud")
+
+
+async def _attach_sentiment(db: AsyncSession, message: models.Message) -> None:
+    """Score the message at write time (gaps A4/D7, decided Q23).
+
+    Best-effort by design: sentiment runs in a thread (a first-call model load
+    must not block the event loop), and any failure — model unavailable, bad
+    input — leaves the message untouched. Chat must work with the AI layer down
+    (gap A6); only the score is lost.
+    """
+    try:
+        result = await asyncio.to_thread(ai_utils.analyze_sentiment, message.text)
+        info = ai_utils.sentiment_model_info()
+    except Exception:
+        logger.warning(
+            "sentiment skipped for message %s", message.id, exc_info=True
+        )
+        return
+    db.add(
+        models.MessageSentiment(
+            message_id=message.id,
+            label=result["label"],
+            score=float(result["score"]),
+            model_name=info["model_name"],
+            model_version=info["model_version"],
+        )
+    )
 
 
 async def create_message(db: AsyncSession, *, user_id: int, text: str) -> models.Message:
     """Persist `text` for `user_id` and return the stored row (id + timestamp set)."""
     message = models.Message(user_id=user_id, text=text)
     db.add(message)
+    await db.flush()  # the sentiment row needs the message id
+    await _attach_sentiment(db, message)
     await db.commit()
     await db.refresh(message)
     return message

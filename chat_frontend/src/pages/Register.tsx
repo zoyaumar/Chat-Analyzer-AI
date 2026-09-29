@@ -38,7 +38,7 @@ export default function Register() {
       <form onSubmit={handleRegister} className="flex flex-col gap-3 w-64">
         <input
           aria-label="Username"
-          className="border p-2"
+          className="focus-ring border p-2"
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
@@ -46,7 +46,7 @@ export default function Register() {
         <input
           aria-label="Password"
           type="password"
-          className="border p-2"
+          className="focus-ring border p-2"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -54,7 +54,7 @@ export default function Register() {
         <button
           type="submit"
           disabled={loading || !username.trim() || !password}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+          className="focus-ring bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
         >
           {loading ? "Registering..." : "Register"}
         </button>

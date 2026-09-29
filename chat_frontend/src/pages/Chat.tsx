@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { isUnauthorized } from "../apiClient";
 import { useAuth } from "../auth/useAuth";
 import MessageList from "../components/MessageList";
@@ -10,6 +10,7 @@ import {
   useRemoveSocketMessage,
   useSendMessage,
 } from "../queries/messages";
+import { useUsernames } from "../queries/users";
 import {
   SocketClosed,
   SocketEchoTimeout,
@@ -75,6 +76,19 @@ export default function Chat() {
     onError: setSocketError,
   });
 
+  // Attribution (gap F10): every author other than the reader is looked up once.
+  // The feed is the only source of ids, so a name appears as soon as the message
+  // does — including one that arrived over the socket.
+  const otherUserIds = useMemo(
+    () => [
+      ...new Set(
+        feed.messages.map((message) => message.user_id).filter((id) => id !== userId)
+      ),
+    ],
+    [feed.messages, userId]
+  );
+  const usernames = useUsernames(otherUserIds);
+
   // While the delete request is in flight its variables name the row to disable.
   const deletingMessageId = deleteMessage.isPending ? deleteMessage.variables ?? null : null;
   const error =
@@ -137,7 +151,7 @@ export default function Chat() {
             type="button"
             onClick={() => void loadOlderMessages()}
             disabled={feed.isFetchingOlder}
-            className="border px-3 py-1 mb-2 disabled:opacity-50"
+            className="focus-ring border px-3 py-1 mb-2 disabled:opacity-50"
           >
             {feed.isFetchingOlder ? "Loading..." : "Load older messages"}
           </button>
@@ -145,32 +159,36 @@ export default function Chat() {
         <MessageList
           messages={feed.messages}
           currentUserId={userId}
+          usernames={usernames}
           deletingMessageId={deletingMessageId}
           onDeleteMessage={(id) => deleteMessage.mutate(id)}
           feedRef={feedRef}
           isLoading={feed.isLoading}
         />
-        <input
-          aria-label="Message"
-          className="border p-2 w-3/4"
-          value={input}
-          maxLength={MAX_MESSAGE_LENGTH}
-          disabled={isSending}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void handleSend();
-            }
-          }}
-        />
-        <button
-          onClick={() => void handleSend()}
-          disabled={isSending || !input.trim()}
-          className="bg-blue-600 text-white px-4 py-2 ml-2 disabled:opacity-50"
-        >
-          {isSending ? "Sending..." : "Send"}
-        </button>
+        {/* One column on a phone, composer and button side by side from `sm` (gap F12). */}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            aria-label="Message"
+            className="focus-ring border p-2 w-full sm:flex-1"
+            value={input}
+            maxLength={MAX_MESSAGE_LENGTH}
+            disabled={isSending}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void handleSend();
+              }
+            }}
+          />
+          <button
+            onClick={() => void handleSend()}
+            disabled={isSending || !input.trim()}
+            className="focus-ring bg-blue-600 text-white px-4 py-2 w-full sm:w-auto disabled:opacity-50"
+          >
+            {isSending ? "Sending..." : "Send"}
+          </button>
+        </div>
       </div>
     </div>
   );

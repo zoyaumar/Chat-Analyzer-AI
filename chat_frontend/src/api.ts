@@ -6,6 +6,7 @@ import type {
   SummaryResult,
   TokenResponse,
   User,
+  UserProfile,
 } from "./types";
 
 // --- Auth ---
@@ -16,6 +17,10 @@ export const loginUser = (data: { username: string; password: string }) =>
   apiPost<TokenResponse>("/users/login", new URLSearchParams(data), {
     skipUnauthorizedHandler: true,
   });
+
+/** A message author's name, for attribution in the feed (gap F10). */
+export const getUserProfile = (userId: number) =>
+  apiGet<UserProfile>(`/users/${userId}`);
 
 // --- Messages ---
 export const getMessages = (params?: MessagePageParams) =>

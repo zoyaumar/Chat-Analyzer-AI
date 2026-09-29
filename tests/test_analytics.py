@@ -26,10 +26,10 @@ async def test_analytics_sentiment_requires_token(client: AsyncClient):
 
 
 async def test_daily_summary_scoped_to_user(client: AsyncClient):
-    await client.post("/users/register", json={"username": "a1", "password": "pw123456"})
-    t1 = (await client.post("/users/login", data={"username": "a1", "password": "pw123456"})).json()["access_token"]
-    await client.post("/users/register", json={"username": "a2", "password": "pw123456"})
-    t2 = (await client.post("/users/login", data={"username": "a2", "password": "pw123456"})).json()["access_token"]
+    await client.post("/users/register", json={"username": "analyst1", "password": "pw123456"})
+    t1 = (await client.post("/users/login", data={"username": "analyst1", "password": "pw123456"})).json()["access_token"]
+    await client.post("/users/register", json={"username": "analyst2", "password": "pw123456"})
+    t2 = (await client.post("/users/login", data={"username": "analyst2", "password": "pw123456"})).json()["access_token"]
 
     await client.post("/messages/", json={"text": "secret one"}, headers={"Authorization": f"Bearer {t1}"})
     await client.post("/messages/", json={"text": "secret two"}, headers={"Authorization": f"Bearer {t2}"})
@@ -39,7 +39,7 @@ async def test_daily_summary_scoped_to_user(client: AsyncClient):
             "/analytics/daily", headers={"Authorization": f"Bearer {t1}"}
         )
     assert resp.status_code == 200
-    # a1's summary must contain only a1's text, never a2's.
+    # analyst1's summary must contain only analyst1's text, never analyst2's.
     assert "secret one" in resp.json()["summary"]
     assert "secret two" not in resp.json()["summary"]
 

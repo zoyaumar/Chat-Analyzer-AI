@@ -1,0 +1,32 @@
+# Automated dependency updates (gap O12).
+#
+# CVEs and version drift are found by CI and by Dependabot rather than by hand.
+# Weekly, because this repository is small: a daily stream of PRs is noise, and
+# the security half of the job is covered by the audit steps in `ci.yml`.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # One PR for the Python side: `torch`/`transformers` are pinned together
+    # (gap A5/A7) and a half-updated stack is worse than an untested one.
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /chat_frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      frontend-dependencies:
+        patterns: ["*"]
+
+  # The workflows themselves are dependencies too (gap O12).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

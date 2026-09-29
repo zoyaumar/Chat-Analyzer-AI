@@ -12,6 +12,12 @@ export const queryKeys = {
     all: ["messages"] as const,
     feed: (userId: number | null) => ["messages", "feed", userId] as const,
   },
+  // Profiles are per user id, so a name is fetched once and reused by every
+  // message that author wrote (gap F10).
+  users: {
+    all: ["users"] as const,
+    profile: (userId: number) => ["users", "profile", userId] as const,
+  },
   analytics: {
     all: ["analytics"] as const,
     dailySummary: ["analytics", "daily"] as const,

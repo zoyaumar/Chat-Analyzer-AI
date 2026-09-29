@@ -35,18 +35,18 @@ async def test_messages_reject_oversized_text(client: AsyncClient, user_and_toke
 
 async def test_messages_scoped_to_sender(client: AsyncClient):
     # Two users; each must only ever see their own messages.
-    await client.post("/users/register", json={"username": "u1", "password": "pw123456"})
-    t1 = (await client.post("/users/login", data={"username": "u1", "password": "pw123456"})).json()["access_token"]
-    await client.post("/users/register", json={"username": "u2", "password": "pw123456"})
-    t2 = (await client.post("/users/login", data={"username": "u2", "password": "pw123456"})).json()["access_token"]
+    await client.post("/users/register", json={"username": "user1", "password": "pw123456"})
+    t1 = (await client.post("/users/login", data={"username": "user1", "password": "pw123456"})).json()["access_token"]
+    await client.post("/users/register", json={"username": "user2", "password": "pw123456"})
+    t2 = (await client.post("/users/login", data={"username": "user2", "password": "pw123456"})).json()["access_token"]
 
-    await client.post("/messages/", json={"text": "from u1"}, headers=_auth(t1))
-    await client.post("/messages/", json={"text": "from u2"}, headers=_auth(t2))
+    await client.post("/messages/", json={"text": "from user1"}, headers=_auth(t1))
+    await client.post("/messages/", json={"text": "from user2"}, headers=_auth(t2))
 
     msgs1 = (await client.get("/messages/", headers=_auth(t1))).json()
     msgs2 = (await client.get("/messages/", headers=_auth(t2))).json()
-    assert [m["text"] for m in msgs1] == ["from u1"]
-    assert [m["text"] for m in msgs2] == ["from u2"]
+    assert [m["text"] for m in msgs1] == ["from user1"]
+    assert [m["text"] for m in msgs2] == ["from user2"]
 
 
 async def test_delete_message_ownership(client: AsyncClient, user_and_token):

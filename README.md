@@ -70,23 +70,28 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Auth | Login → signed JWT (HS256, `PyJWT`, configurable lifetime) | ✅ | — |
 | Auth | Bearer-token guard on protected endpoints | ✅ | — |
 | Auth | `GET /users/me` profile lookup | ✅ | — |
+| Auth | `GET /users/{user_id}` public profile (id, username, `created_at`) | ✅ | — |
 | Auth | Account deletion (`DELETE /users/me`, messages cascade) | ✅ | — |
 | Auth | Refresh tokens + server-side logout | 🔨 | M4 |
 | Chat | Send a message (REST, persisted) | ✅ | — |
 | Chat | List messages | ✅ auth-required, user-scoped, bounded keyset API with load-older UI | — |
 | Chat | Delete your own message | ✅ owner-only control; confirmed deletion is removed from the feed | — |
+| Chat | Author names in the feed (`GET /users/{user_id}`, cached per author, initials badge) | ✅ | — |
 | Chat | Realtime delivery | 🟡 authenticated JSON echo only: no persistence, no fan-out — **deliberately kept and finished in M2** | M2 |
-| Analytics | Sentiment analysis | 🟡 works with lazy model loading; results are not stored | M3 |
-| Analytics | Daily summary | 🟡 scoped to the authenticated user; uses a half-open UTC day range | M3 (quality work) |
-| Data | Alembic as the single schema owner | ✅ real initial migration; `create_all()` removed | — |
+| Analytics | Sentiment analysis | ✅ scored once at write time and stored per message; ad-hoc repeats answered from a cache | — |
+| Analytics | Daily summary | ✅ user-scoped UTC day window, chunked map-reduce summarisation, smaller pinned model | — |
+| Analytics | Sentiment timeline (`GET /analytics/sentiment/timeline?days=N`) | ✅ daily counts and mean score, read from stored results | — |
+| Data | Alembic as the single schema owner | ✅ real initial migration; `create_all()` removed; `alembic check` reports no drift | — |
 | Data | Async database access (`asyncpg` + `AsyncSession`) | ✅ | — |
 | Frontend | Login / register / chat / analytics screens, routing, logout | ✅ | — |
 | Frontend | Single-origin API access (no CORS, no hard-coded URLs) | ✅ | — |
 | Frontend | Protected routes + 401 handling and expiry UX | ✅ | — |
-| Frontend | Loading, error and empty states | 🔨 | M2 |
+| Frontend | Loading, error and empty states | ✅ | M2 |
+| Frontend | Visible keyboard focus, labelled feed, narrow-screen layout | ✅ | — |
 | Ops | Docker Compose stack (`db` + `api` + `web`) | ✅ | — |
 | Ops | Backend tests (pytest + httpx) and frontend tests (Vitest) | ✅ | — |
-| Ops | CI on every push (lint, tests, migrations) | ✅ | — |
+| Ops | CI on every push (lint, type-check, migrations, tests, `npm audit`) | ✅ | — |
+| Ops | Dependency updates and CVE scanning (Dependabot + `pip-audit`) | ✅ | — |
 
 > Every 🟡 and 🔨 row is tracked individually — with file references, impact and the fix — in
 > [`docs/GAPS_AND_IMPROVEMENTS.md`](docs/GAPS_AND_IMPROVEMENTS.md). The reasoning behind each
@@ -144,11 +149,14 @@ Request flow in words:
 3. Pages read server state through TanStack Query hooks in `src/queries/`: one cache and one
    query-key convention, retries for network failures, and mutations that write the cached feed
    directly instead of refetching it.
-4. FastAPI validates the token in `auth_utils`, resolves the current user, and hands the route
+4. `POST /users/register` is checked against the credential policy, and both credential endpoints
+   pass a per-client rate limit *before* anything is hashed or verified (`ratelimit.py`, gap S6).
+5. FastAPI validates the token in `auth_utils`, resolves the current user, and hands the route
    an async `AsyncSession` through the `get_db` dependency.
-5. Route handlers and WebSocket messages persist through a shared `crud.py` service layer (`create_message`, `get_messages_for_user`, `delete_message`). Both REST and WebSocket operations write messages identically and broadcast realtime frames via `realtime.manager.send_to_user`.
-6. Analytics endpoints call the NLP layer. Results are currently computed on demand; persisting
-   scores with each message is scheduled for M3.
+6. Route handlers and WebSocket messages persist through a shared `crud.py` service layer (`create_message`, `get_messages_for_user`, `delete_message`). Both REST and WebSocket operations write messages identically and broadcast realtime frames via `realtime.manager.send_to_user`.
+7. Analytics endpoints read the NLP layer's persisted results instead of recomputing them: each
+   message is scored once at write time into `message_sentiment`, and the summary and timeline
+   aggregate from there (gaps A3, A4, D7).
 
 ## Tech stack
 
@@ -183,7 +191,7 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Same-origin access | Vite dev proxy + nginx `web` container in production | in place (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
-| Tests | Vitest + React Testing Library + MSW | in use (52 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, MSW page-level) |
+| Tests | Vitest + React Testing Library + MSW | in use (61 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, MSW page-level) |
 
 ## Repository layout
 
@@ -192,51 +200,60 @@ migration and container files are already present.
 
 ```
 Chat-Analyzer-AI/
-├── docker-compose.yml             # M1 — db + api + web (+ inference in M3)
+├── docker-compose.yml             # db + api + web, one published port (8080)
 ├── docker/
-│   ├── api.Dockerfile             # M1
-│   ├── web.Dockerfile             # M1 — builds the SPA and serves the static bundle
-│   └── inference.Dockerfile       # M3 — only if inference moves out of process
-├── pyproject.toml                 # M1 — project metadata + tool config (ruff, pytest)
-├── requirements.txt               # M1 — one pinned runtime list (replaces the two today)
+│   ├── api.Dockerfile             # migrations on start, then uvicorn
+│   ├── web.Dockerfile             # builds the SPA, serves it through nginx
+│   └── nginx.conf                 # SPA fallback, API/WS proxy, security headers
+├── pyproject.toml                 # project metadata + tool config (ruff, pytest, mypy)
+├── requirements.txt               # one pinned runtime list
 ├── .env.example                   # template for local configuration
+├── .github/
+│   ├── dependabot.yml             # weekly pip/npm/actions updates (O12)
+│   └── workflows/ci.yml           # lint, type-check, audit, migrations, tests
 ├── alembic/
-│   ├── env.py                     # reads DATABASE_URL_SYNC, targets chat_backend.models.Base
+│   ├── env.py                     # async template, targets chat_backend.models.Base
 │   └── versions/
-│       └── 06c1b9c7b0ec_...py     # alter-style today; replaced by a true initial migration in M1
+│       ├── 06c1b9c7b0ec_...py     # true initial migration (users, messages)
+│       ├── 1a2b3c4d5e6f_...py     # message query indexes
+│       ├── f4e5d6c7b8a9_...py     # cap Message.text at 4000, cascade user deletion
+│       ├── b7c8d9e0f1a2_...py     # row timestamps + message_sentiment (D5, D7)
+│       └── c8d9e0f1a2b3_...py     # drop the redundant unique constraint on username
 ├── alembic.ini
 ├── chat_backend/                  # FastAPI application package
-│   ├── main.py                    # app setup, router registration, health endpoints
-│   ├── config.py                  # M1 — pydantic-settings: one place for every env var
+│   ├── main.py                    # app setup, router registration, health probes
+│   ├── config.py                  # pydantic-settings: one place for every env var
 │   ├── database.py                # async engine, AsyncSession factory, get_db dependency
-│   ├── models.py                  # User, Message ORM models
+│   ├── models.py                  # User, Message, MessageSentiment
 │   ├── schemas.py                 # Pydantic v2 request/response models
 │   ├── auth_utils.py              # password hashing, PyJWT encode/decode, get_current_user
-│   ├── ai_utils.py                # NLP helpers; lazy-loaded and pushed to M3 packaging
+│   ├── ai_utils.py                # lazy pinned pipelines, chunking, caching, model status
 │   ├── crud.py                    # service layer shared by REST and the WebSocket handler
+│   ├── realtime.py                # wire frames + the per-user connection registry
+│   ├── ratelimit.py               # per-client sliding-window limiters + FastAPI dependencies (S6)
 │   ├── observability.py           # JSON-lines logging + X-Request-ID middleware (O5)
 │   └── routes/
-│       ├── users.py               # POST /users/register, POST /users/login, GET /users/me
+│       ├── users.py               # register, login, /users/me, /users/{id}, delete me
 │       ├── messages.py            # POST /messages/, GET /messages/, DELETE /messages/{id}
-│       ├── analytics.py           # POST /analytics/sentiment, GET /analytics/daily
-│       └── websocket.py           # WS /ws/chat — authenticated, persisted, broadcast (M2)
+│       ├── analytics.py           # sentiment, daily summary, sentiment timeline
+│       └── websocket.py           # WS /ws/chat — authenticated, persisted, broadcast
 ├── chat_frontend/                 # React + Vite SPA
 │   ├── src/
-│   │   ├── api.ts                 # endpoint wrappers (plain data)
+│   │   ├── api.ts                 # endpoint wrappers (plain data), incl. GET /users/{id}
 │   │   ├── apiClient.ts           # typed fetch client: bearer token, query params, ApiError
 │   │   ├── realtime/              # useChatSocket + protocol: first-frame auth, heartbeat, reconnect
-│   │   ├── queries/               # query keys, client policy and the message/analytics hooks
+│   │   ├── queries/               # query keys, client policy, message/analytics/user hooks
 │   │   ├── test/                  # Vitest setup, QueryClient render helper, MSW handlers
-│   │   ├── types.ts               # shared TypeScript interfaces (M2: generated from OpenAPI)
-│   │   ├── App.tsx                # BrowserRouter + protected route table
-
-│   │   ├── auth/                 # AuthProvider, RequireAuth, token helpers
-│   │   ├── components/            # Navbar, MessageList (extracted from Chat.tsx)
-│   │   └── pages/                 # Login, Register, Chat, Analytics
+│   │   ├── types.ts               # shared TypeScript interfaces
+│   │   ├── index.css              # Tailwind entry + the shared `.focus-ring` class
+│   │   ├── auth/                  # AuthProvider, RequireAuth, token helpers
+│   │   ├── components/            # Navbar, MessageList (author names + initials)
+│   │   ├── pages/                 # Login, Register, Chat, Analytics
+│   │   └── App.tsx                # BrowserRouter + protected route table
 │   ├── index.html
-│   ├── vite.config.ts             # M1 — dev proxy for /api, /ws
+│   ├── vite.config.ts             # dev proxy for the API and /ws, Vitest config
 │   └── package.json
-├── tests/                         # M1 — pytest + httpx suite (auth, ownership, users/me)
+├── tests/                         # pytest + httpx suite (auth, limits, chat, analytics, AI, ops)
 └── docs/
     ├── DESIGN_DECISIONS.md        # why each technology and pattern is here
     └── GAPS_AND_IMPROVEMENTS.md   # prioritised backlog with file references
@@ -246,25 +263,26 @@ Chat-Analyzer-AI/
 
 ### Option A — Docker Compose (the M1 target)
 
-> **Not available yet.** This is the entry point M1 delivers; the files are listed in
-> [`docs/GAPS_AND_IMPROVEMENTS.md`](docs/GAPS_AND_IMPROVEMENTS.md) (item **O13**). Once it
-> lands, a fresh clone is one command:
-
 ```bash
 git clone https://github.com/zoyaumar/Chat-Analyzer-AI.git
 cd Chat-Analyzer-AI
 cp .env.example .env          # Windows: copy .env.example .env   (set SECRET_KEY)
-docker compose up --build     # -> web on http://localhost:5173, API on http://localhost:8000
+docker compose up --build     # -> the whole app on http://localhost:8080
 ```
 
-The compose stack is planned as:
+Three services, one published port:
 
 | Service | Image / build | Purpose |
 | --- | --- | --- |
-| `db` | `postgres:16` | database with a named volume, healthcheck |
-| `api` | `docker/api.Dockerfile` | runs `alembic upgrade head` then `uvicorn` |
-| `web` | `docker/web.Dockerfile` | builds the SPA and serves it on the same origin |
-| `inference` | `docker/inference.Dockerfile` | M3, only if NLP moves out of the API process |
+| `db` | `postgres:16` | database with a named volume and a healthcheck |
+| `api` | `docker/api.Dockerfile` | runs `alembic upgrade head`, then `uvicorn`; not published — only `web` reaches it |
+| `web` | `docker/web.Dockerfile` | builds the SPA and serves it through nginx on `:8080`, proxying the API and `/ws` |
+
+The browser therefore talks to one origin and there is no CORS configuration to get wrong.
+
+> NLP inference still runs inside the `api` container (lazily, gap U4). The optional
+> `inference` service — the same process split out, or a hosted API — is a decision that is
+> still open; see **U4** in [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md).
 
 ### Option B — run the two halves directly (no Docker)
 
@@ -275,7 +293,7 @@ The compose stack is planned as:
 | Python | 3.11+ (verified on 3.11.0) |
 | Node.js | 20+ (verified on 22.13) |
 | npm | 10+ |
-| PostgreSQL | any reachable instance — a local container (Compose `db` service) in M1, or a hosted instance such as Supabase |
+| PostgreSQL | any reachable instance — the Compose `db` service, a local container on `5433` for tests, or a hosted instance such as Supabase |
 
 **1. Configure**
 
@@ -319,12 +337,16 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 | `docker compose exec api alembic upgrade head` | repo root | apply migrations inside the stack (M1) |
 | `uvicorn chat_backend.main:app --reload --port 8000` | repo root | run the API with autoreload |
 | `alembic upgrade head` | repo root | apply migrations |
+| `alembic check` | repo root | fail if the models and the migrations have drifted apart |
 | `alembic revision --autogenerate -m "add x"` | repo root | generate a migration from model changes |
 | `pytest` | repo root | backend tests (M1) |
+| `RUN_AI_EVAL=1 pytest tests/test_ai_eval.py` | repo root | opt-in accuracy check on the pinned models — downloads the weights, fails if a model no longer clears the floor (A7) |
+| `python -m pip_audit` | repo root | report known advisories in the installed Python packages (O12) |
 | `npm run dev` | `chat_frontend/` | Vite dev server with HMR |
 | `npm run build` | `chat_frontend/` | type-check (`tsc -b`) + production bundle |
 | `npm run lint` | `chat_frontend/` | ESLint over the SPA |
-| `npm test` | `chat_frontend/` | Vitest suite (52 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, MSW page-level, CSP baseline) |
+| `npm audit --omit=dev --audit-level=high` | `chat_frontend/` | CVE gate for the production dependency tree (O12) |
+| `npm test` | `chat_frontend/` | Vitest suite (61 tests across 11 files: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, attribution, MSW page-level, CSP baseline) |
 | `py -m compileall chat_backend` | repo root | quick syntax check of the backend |
 
 ## Definition of shippable
@@ -340,6 +362,8 @@ deploy. It is done when all of the following are true:
 - [x] The schema is produced by Alembic alone in application startup; `alembic upgrade head`
       succeeds against an empty database and application code does not call `create_all()`.
 - [x] The API refuses to start without `SECRET_KEY`, and token lifetime comes from config.
+- [x] Registration enforces a credential policy and the endpoints that mint or create an identity
+      are rate-limited per client address (gap S6).
 - [x] One pinned dependency list installs a working environment from scratch.
 - [x] `pytest` covers auth, message ownership, `/users/me` and the analytics scoping rule,
       and passes in CI.
@@ -359,8 +383,15 @@ deploy. It is done when all of the following are true:
 | `DB_MAX_OVERFLOW` | no | `10` | Connections allowed beyond `DB_POOL_SIZE` before the pool blocks (D9). |
 | `DB_POOL_TIMEOUT` | no | `30` | Seconds to wait for a pooled connection before failing (D9). |
 | `DB_POOL_RECYCLE` | no | `1800` | Seconds before an idle connection is recycled, ahead of a pooler dropping it (D9). |
-| `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (M3, replaces `facebook/bart-large-cnn`). |
+| `AI_SENTIMENT_MODEL` | no | `distilbert-base-uncased-finetuned-sst-2-english` | Sentiment model (A7). |
+| `AI_SENTIMENT_REVISION` | no | pinned 40-char SHA | Exact upstream revision of the sentiment model; empty means "follow the main branch" (A7). |
+| `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (M3, replaces `facebook/bart-large-cnn`, A1). |
+| `AI_SUMMARY_REVISION` | no | pinned 40-char SHA | Exact upstream revision of the summary model; empty means "follow the main branch" (A7). |
 | `AI_INFERENCE_URL` | no | – | Base URL of a separate inference service (M3) — only relevant once the packaging decision (U4) is settled. |
+| `LOGIN_RATE_LIMIT` | no | `10` | Login attempts allowed per client address per window before a `429` (S6). |
+| `LOGIN_RATE_WINDOW_SECONDS` | no | `300` | Length of that window, in seconds (S6). |
+| `REGISTER_RATE_LIMIT` | no | `5` | Registrations allowed per client address per window (S6). |
+| `REGISTER_RATE_WINDOW_SECONDS` | no | `3600` | Length of that window, in seconds (S6). |
 | `VITE_DEV_API_TARGET` | no | `http://127.0.0.1:8000` | Optional Vite dev-proxy target for the API. The browser still uses same-origin relative URLs. |
 
 Example `.env` for the Docker stack:
@@ -432,9 +463,10 @@ use `http://127.0.0.1:8000` for the manual setup. Authenticated endpoints expect
 
 | Method | Path | Auth | Request | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/users/register` | – | JSON `{ "username": str, "password": str }` | `{ "id": int, "username": str }` |
+| `POST` | `/users/register` | – | JSON `{ "username": str, "password": str }` | `{ "id": int, "username": str, "created_at": str }` — `422` if the policy fails, `429` if the address is over its budget |
 | `POST` | `/users/login` | – | `application/x-www-form-urlencoded` with `username`, `password` | `{ "access_token": str, "token_type": "bearer" }` |
-| `GET` | `/users/me` | Bearer | – | `{ "id": int, "username": str }` |
+| `GET` | `/users/me` | Bearer | – | `{ "id": int, "username": str, "created_at": str }` |
+| `GET` | `/users/{user_id}` | Bearer | – | Same profile shape; used to name message authors (F10) |
 | `DELETE` | `/users/me` | Bearer | – | `{ "detail": "Account deleted" }` — cascades the user's messages (D4) |
 
 <details>
@@ -443,11 +475,15 @@ use `http://127.0.0.1:8000` for the manual setup. Authenticated endpoints expect
 ```bash
 curl -X POST http://127.0.0.1:8000/users/register \
   -H "Content-Type: application/json" \
-  -d '{"username": "alice", "password": "s3cret"}'
-# -> {"id": 1, "username": "alice"}
+  -d '{"username": "alice", "password": "s3cret-pw"}'
+# -> {"id": 1, "username": "alice", "created_at": "2026-02-11T09:14:02.881Z"}
 ```
 
-Failure modes: `400 Username already registered`. M1 adds length/regex constraints (gap S6).
+Failure modes: `400 Username already registered`; `422` when the credential policy rejects the
+input — `username` 3–32 characters of `[A-Za-z0-9._-]`, `password` at least 8 characters and at most
+72 bytes (bcrypt hashes no more than that, and passlib would otherwise truncate silently); `429 Too
+many attempts` with a `Retry-After` header once this address has spent its registration budget
+(S6, five per hour by default).
 </details>
 
 <details>
@@ -456,11 +492,15 @@ Failure modes: `400 Username already registered`. M1 adds length/regex constrain
 ```bash
 curl -X POST http://127.0.0.1:8000/users/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=alice&password=s3cret"
+  -d "username=alice&password=s3cret-pw"
 # -> {"access_token": "eyJhbGciOi...", "token_type": "bearer"}
 ```
 
-Failure modes: `401 Invalid username or password`.
+Failure modes: `401 Invalid username or password` when the credentials are wrong or the account does
+not exist; `429 Too many attempts` with a `Retry-After` header once this address has spent its login
+budget (S6, ten per five minutes by default). Every attempt spends budget, so a password guesser
+runs out — and so does a user who mistypes ten times, which is the trade-off that makes the limit
+worth having.
 
 The JWT payload is `{ "sub": "<user_id>", "exp": <unix ts> }`; M1 adds `iat`/`jti` so a
 revocation list becomes possible later (gaps S7/Q9).
@@ -513,6 +553,7 @@ a `user_id` that the API ignores.
 | --- | --- | --- | --- | --- |
 | `POST` | `/analytics/sentiment` | Bearer | JSON body `{ "text": "..." }` (max 4,000 characters) | `{ "label": "POSITIVE"\|"NEGATIVE", "score": float }` |
 | `GET` | `/analytics/daily` | Bearer | – | `{ "date": "YYYY-MM-DD", "summary": str }` |
+| `GET` | `/analytics/sentiment/timeline` | Bearer | query `days=1..365` (default 30) | `{ "days": int, "timeline": [{ "date", "messages", "positive", "negative", "avg_score" }] }` |
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/analytics/sentiment" \
@@ -522,13 +563,26 @@ curl -X POST "http://127.0.0.1:8000/analytics/sentiment" \
 
 curl http://127.0.0.1:8000/analytics/daily -H "Authorization: Bearer $TOKEN"
 # -> {"date": "2026-02-11", "summary": "..."}
+
+curl "http://127.0.0.1:8000/analytics/sentiment/timeline?days=7" -H "Authorization: Bearer $TOKEN"
+# -> {"days": 7, "timeline": [{"date": "2026-02-10", "messages": 4, "positive": 3, "negative": 1, "avg_score": 0.82}]}
 ```
 
 Current analytics behavior:
 
-- Sentiment accepts a JSON body with a bounded `text` field; `/analytics/daily` is scoped to
-  the authenticated user and uses a half-open UTC day range. The remaining M3 work is
-  summarisation quality and persisted scores (gaps **A1/A2/D7**).
+- Every message is scored once, at write time, in the same transaction, and the result is
+  stored in `message_sentiment` with the model name and pinned revision that produced it
+  (D7/A4/A7). Reads (the timeline) never run inference; a scoring failure costs the score,
+  never the message (A6).
+- `/analytics/sentiment` stays an ad-hoc endpoint for arbitrary text: `@lru_cache` answers
+  repeats, the input is capped at 4,000 characters, and the model is asked with
+  `truncation=True`, so a long input degrades instead of raising (A2).
+- `/analytics/daily` is scoped to the authenticated user and summarises a half-open UTC day
+  window; the transcript is chunked and summarised map-reduce style, so a busy day cannot
+  exceed the model's token limit (A2).
+- Both model-backed endpoints answer `503` with the reason when a model cannot load; chat,
+  message history and deletion are unaffected. `GET /health/ready` reports each capability as
+  `ready`, `failed` or `not_loaded`.
 
 ### Utility
 
@@ -536,7 +590,7 @@ Current analytics behavior:
 | --- | --- | --- | --- |
 | `GET` | `/` | – | `{ "message": "Welcome to Chat Analyzer API with AI!" }` |
 | `GET` | `/health` | – | `{ "status": "ok" }` |
-| `GET` | `/health/ready` | – | `{ "status": "ok", "database": "up" }` or `503` when the database is unavailable |
+| `GET` | `/health/ready` | – | `{ "status": "ok", "database": "up", "model_state": { "sentiment": "ready\|failed\|not_loaded", "summary": … } }` or `503` when the database is unavailable |
 
 `/health` and `/health/ready` are the supported liveness/readiness probes; the public `/test-db`
   diagnostic has been removed (gaps **B8**, **O5**).
@@ -624,20 +678,29 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 55 passing (needs a Postgres; see below) |
-| Migrations against an empty database | `alembic upgrade head` | ✅ verified on PostgreSQL 16 |
+| Backend tests | `py -m pytest` | ✅ 109 passing, 2 skipped (the opt-in A7 evaluation; needs a Postgres, see below) |
+| Migrations against an empty database | `alembic upgrade head` + `alembic downgrade base` | ✅ verified on PostgreSQL 16, both directions |
+| Models vs migrations | `alembic check` | ✅ no drift |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | ✅ clean (non-strict + pydantic/SQLAlchemy plugins) |
-| Frontend tests | `cd chat_frontend && npm test` | ✅ 52 passing (10 files) |
+| Frontend tests | `cd chat_frontend && npm test` | ✅ 61 passing (11 files) |
+| Frontend production dependency audit | `cd chat_frontend && npm audit --omit=dev --audit-level=high` | ✅ 0 vulnerabilities |
+| Python dependency audit | `python -m pip_audit` | 🟡 reports advisories in the current pins — see D8/O12 |
 | CI (all of the above on every push) | GitHub Actions | ✅ backend + frontend jobs |
 
 **Backend test suite.** `tests/` covers register/login (happy path, duplicate username, wrong
-password), `GET /users/me` (with/without token), message create/list/delete with
-ownership checks, analytics with monkeypatched models (no weights downloaded), daily-summary
-user scoping, the WebSocket accept/reject/echo paths, account deletion with its cascade,
-security headers, and the structured-logging layer
-(JSON formatter, `X-Request-ID` echo, access-log correlation). The suite runs against a real
-PostgreSQL — start a disposable one with:
+password), the credential policy and its rate limits (username shape, password length, the 72-byte
+bcrypt cap, and a `429` with `Retry-After` per client address — `test_rate_limit.py`), `GET
+/users/me` and `GET /users/{user_id}` (with/without token, safe projection), message
+create/list/delete with ownership checks, analytics with fake models (no weights are
+ever downloaded — `tests/conftest.py` replaces them session-wide), daily-summary user scoping,
+the WebSocket accept/reject/echo paths, account deletion with its cascade, security headers, and
+the structured-logging layer (JSON formatter, `X-Request-ID` echo, access-log correlation).
+M3 added the AI-specific ones: scoring once at write time with the model name and revision
+stored beside it, a scoring failure that costs only the score, chunking and memoisation unit
+tests (`test_ai_utils.py`), the sentiment timeline (per UTC day, caller-scoped, window-bounded),
+`503` instead of `500` when a model is unavailable, and the model state reported by
+`/health/ready`. The suite runs against a real PostgreSQL — start a disposable one with:
 
 ```bash
 docker run --rm -d --name chat-test-pg \
@@ -653,10 +716,15 @@ by default (override with `TEST_DATABASE_URL`), creates the schema from metadata
 redirects, valid-token access, token-expiry handling, REST/socket message de-duplication, the
 owner-only delete and composer interactions, the analytics actions, the keyset "load older" cursor,
 the `fetch` client (token header, query mapping, `ApiError`, 401 handler) and the TanStack Query
-retry policy — 52 tests across 10 files, including the `useChatSocket` hook (heartbeat, backoff,
+retry policy — 61 tests across 11 files, including the `useChatSocket` hook (heartbeat, backoff,
 auth rejection, HTTP fallback), the defensive `parseFrame` protocol tests, MSW page-level tests
-that run the real `apiClient`/query stack against `src/test/handlers.ts`, and the index.html
-CSP baseline. A dedicated login-form test remains open.
+that run the real `apiClient`/query stack against `src/test/handlers.ts` (one of which asserts that
+two messages from the same author cost exactly one profile request), the attribution and
+accessibility contract of `MessageList`, and the index.html CSP baseline. A dedicated login-form
+test remains open.
+
+A model is never loaded by either suite; the only place that touches real weights is
+`RUN_AI_EVAL=1 pytest tests/test_ai_eval.py`, which is skipped by default.
 
 ## Milestones & roadmap
 
@@ -702,10 +770,15 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 
 | Work | Gaps |
 | --- | --- |
-| Settle the inference packaging (U4) and lazy-load a small model | B5, A1, A6 |
-| Chunked map-reduce summarisation, length guards, 4xx instead of 500 | A2 |
-| Persist sentiment per message at write time; make analytics a lookup | A4, D7 |
-| Pin model revisions and record model name/version with each result | A7 |
+| ~~Lazy-load a small, pinned model and survive a failed download~~ ✅ | B5 ✅, A1 ✅, A6 ✅ |
+| ~~Chunked map-reduce summarisation, length guards, `503`/`422` instead of `500`~~ ✅ | A2 ✅ |
+| ~~Persist sentiment per message at write time; make analytics a lookup~~ ✅ | A4 ✅, D7 ✅ |
+| ~~Pin model revisions; store model name/version with each result; opt-in accuracy fixtures~~ ✅ | A7 ✅ |
+| ~~`GET /analytics/sentiment/timeline?days=N` over the stored scores~~ ✅ | A3 🟡 (dashboard still open) |
+| ~~`created_at`/`updated_at` and UTC-grouped aggregates (`timestamptz` end to end)~~ ✅ | D5 ✅, D7 ✅ |
+| ~~Author names in the feed from `GET /users/{user_id}`, cached per author~~ ✅ | F10 ✅ |
+| ~~Focus rings, labelled feed, narrow-screen layout~~ ✅ | F12 ✅ |
+| ~~Dependency updates and CVE scanning in CI~~ ✅ | O12 ✅ |
 | Analytics dashboard with sentiment trends and volume charts | P12 |
 
 **M4 — Hardening and product polish**
@@ -714,7 +787,8 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 | --- | --- |
 | Refresh tokens, server-side logout, `HttpOnly` cookie session | S7, Q5, Q9 |
 | Password/username policy, rate limiting on login and register | S6 |
-| Tailwind design tokens, shared UI primitives, accessibility pass | F12 |
+| Automated accessibility audit (axe) and Tailwind design tokens | F12 follow-up |
+| Upgrade the Python pins that carry advisories (`transformers`, Starlette/FastAPI) | D8, O12 |
 | Types generated from OpenAPI; delete dead files and template leftovers | F13 follow-up, F7, F8 |
 | Redis pub/sub (or `LISTEN/NOTIFY`) for multi-instance fan-out | Q18 |
 | All-users ("global") broadcast to every connected client, not only the author's sockets | P16 |

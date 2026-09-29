@@ -61,7 +61,7 @@ export default function Analytics() {
           <div className="flex gap-2">
             <input
               aria-label="Sentiment text"
-              className="border p-2 flex-1"
+              className="focus-ring border p-2 flex-1"
               value={text}
               disabled={sentiment.isPending}
               onChange={(e) => setText(e.target.value)}
@@ -76,7 +76,7 @@ export default function Analytics() {
             <button
               onClick={handleSentiment}
               disabled={sentiment.isPending || !text.trim()}
-              className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+              className="focus-ring bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
             >
               {sentiment.isPending ? "Analyzing..." : "Analyze"}
             </button>
@@ -99,7 +99,7 @@ export default function Analytics() {
           <button
             onClick={handleSummary}
             disabled={summary.isFetching}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+            className="focus-ring bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
           >
             {summary.isFetching ? "Generating Summary..." : "Get Daily Summary"}
           </button>

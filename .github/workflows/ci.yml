@@ -38,6 +38,16 @@ jobs:
         run: ruff check chat_backend tests alembic
       - name: Type-check
         run: mypy
+      # Reports, but does not gate yet (gap O12). The pins in requirements.txt
+      # carry known advisories — `transformers 4.53.0` and `starlette 0.47.3`
+      # (via `fastapi 0.116.1`) — and clearing them is a coordinated upgrade,
+      # tracked as gap D8 with the A7 evaluation fixtures as the safety net.
+      # It runs here so the list can be seen and cannot grow unnoticed.
+      - name: Audit dependencies (gap O12)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit
       - name: Apply migrations to a fresh database
         run: alembic upgrade head
       - name: Test
@@ -58,6 +68,8 @@ jobs:
           cache-dependency-path: chat_frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Audit production dependencies (gap O12)
+        run: npm audit --omit=dev --audit-level=high
       - name: Lint
         run: npm run lint
       - name: Test

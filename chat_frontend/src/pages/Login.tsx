@@ -48,7 +48,7 @@ export default function Login() {
       <form onSubmit={handleLogin} className="flex flex-col gap-3 w-64">
         <input
           aria-label="Username"
-          className="border p-2"
+          className="focus-ring border p-2"
           placeholder="Username"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
@@ -56,7 +56,7 @@ export default function Login() {
         <input
           aria-label="Password"
           type="password"
-          className="border p-2"
+          className="focus-ring border p-2"
           placeholder="Password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
@@ -64,7 +64,7 @@ export default function Login() {
         <button
           type="submit"
           disabled={loading || !username.trim() || !password}
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+          className="focus-ring bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
         >
           {loading ? "Logging in..." : "Login"}
         </button>

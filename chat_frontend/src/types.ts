@@ -3,6 +3,13 @@ export interface User {
   username: string;
 }
 
+/** `GET /users/{user_id}` — the public profile, used to name message authors (F10). */
+export interface UserProfile {
+  id: number;
+  username: string;
+  created_at: string;
+}
+
 export interface Message {
   id: number;
   text: string;

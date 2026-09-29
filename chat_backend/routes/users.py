@@ -3,14 +3,20 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chat_backend import auth_utils, models, schemas
+from chat_backend import auth_utils, models, ratelimit, schemas
 from chat_backend.auth_utils import create_access_token, get_current_user
 from chat_backend.database import get_db
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.post("/login", response_model=schemas.Token)
+@router.post(
+    "/login",
+    response_model=schemas.Token,
+    # Brute-force surface: limited per client address (gap S6).
+    dependencies=[Depends(ratelimit.login_rate_limit)],
+    responses=ratelimit.RATE_LIMIT_RESPONSES,
+)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
@@ -28,7 +34,16 @@ async def login(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.post("/register", response_model=schemas.UserOut)
+@router.post(
+    "/register",
+    response_model=schemas.UserOut,
+    # Spam surface: a smaller budget over a longer window (gap S6). The policy
+    # itself — username shape, password length — is enforced by `UserCreate`,
+    # so the two layers are independent: a body that `422`s still spends budget,
+    # which is what a sprayer sends anyway (see `tests/test_rate_limit.py`).
+    dependencies=[Depends(ratelimit.register_rate_limit)],
+    responses=ratelimit.RATE_LIMIT_RESPONSES,
+)
 async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(models.User).where(models.User.username == user.username)
@@ -49,6 +64,24 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
 @router.get("/me", response_model=schemas.UserOut)
 async def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+
+@router.get("/{user_id}", response_model=schemas.UserOut)
+async def read_user(
+    user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Public profile fields for `user_id` — attribution for a message (gap F10).
+
+    Registered after `GET /users/me`, which wins the `/users/me` path. Only the
+    safe projection leaves (`UserOut`: id, username, created_at) — never the
+    password hash (gap S3).
+    """
+    user = await db.get(models.User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
 
 @router.delete("/me")

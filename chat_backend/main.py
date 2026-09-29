@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
+from chat_backend import ai_utils
 from chat_backend.config import settings
 from chat_backend.database import get_db
 from chat_backend.observability import (
@@ -101,15 +102,32 @@ async def health() -> dict:
 
 @app.get("/health/ready")
 async def readiness(db: AsyncSession = Depends(get_db)) -> JSONResponse:
-    """Readiness: the database answers `SELECT 1`."""
+    """Readiness: the database answers `SELECT 1`; model state is reported (gaps A6/O5).
+
+    Models are reported, not required. A deployment whose weights failed to
+    download still serves chat, history and deletes, so the probe stays `200`
+    and `model_state` says which capability is degraded (`ready`, `failed`, or
+    `not_loaded` — a lazy model that has not been asked for anything yet).
+    """
+    model_state = {
+        "sentiment": ai_utils.model_status("sentiment"),
+        "summary": ai_utils.model_status("summary"),
+    }
     try:
         await db.execute(text("SELECT 1"))
     except Exception:
         logger.exception("Readiness check failed: database unreachable")
         return JSONResponse(
-            status_code=503, content={"status": "unavailable", "database": "down"}
+            status_code=503,
+            content={
+                "status": "unavailable",
+                "database": "down",
+                "model_state": model_state,
+            },
         )
-    return JSONResponse(content={"status": "ok", "database": "up"})
+    return JSONResponse(
+        content={"status": "ok", "database": "up", "model_state": model_state}
+    )
 
 
 @app.get("/")

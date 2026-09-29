@@ -118,6 +118,29 @@ describe("Chat page against the API (MSW)", () => {
     );
   });
 
+  it("names another author by looking the profile up once (gap F10)", async () => {
+    resetMswState([
+      mswMessage(1, 0, "Message from bob", 2),
+      mswMessage(2, 1, "Another one from bob", 2),
+    ]);
+
+    renderWithQueryClient(<Chat />);
+
+    expect(await screen.findAllByText("bob:")).toHaveLength(2);
+    expect(screen.getByText("Message from bob")).toBeInTheDocument();
+    // Two messages, one author: one request, cached under the user id.
+    await waitFor(() => expect(mswState.profileRequests).toEqual([2]));
+  });
+
+  it("falls back to the id when the author's profile cannot be read", async () => {
+    resetMswState([mswMessage(1, 0, "Message from a stranger", 9)]);
+
+    renderWithQueryClient(<Chat />);
+
+    expect(await screen.findByText("User 9:")).toBeInTheDocument();
+    expect(mswState.profileRequests).toContain(9);
+  });
+
   it("deletes a message through the API and the cache", async () => {
     resetMswState([mswMessage(7, 0, "Delete via API")]);
 
