@@ -256,3 +256,178 @@ async def test_an_unreadable_stored_hash_is_a_401_not_a_500(
 
     assert response.status_code == 401
 
+
+# --- Refresh tokens, logout & the origin guard (gaps S7/S9, Q5/Q9) ---------
+# The session is now two halves: a short-lived access token in the body (held
+# in memory by the SPA) and a rotating refresh token in an HttpOnly cookie,
+# stored hashed in `refresh_tokens` so it can be revoked server-side.
+
+
+def _refresh_cookie_header(response) -> str:
+    """The `Set-Cookie` line for the refresh token, or a failing assertion."""
+    for header in response.headers.get_list("set-cookie"):
+        if header.startswith("refresh_token="):
+            return header
+    raise AssertionError(
+        f"no refresh_token cookie in {response.headers.get_list('set-cookie')}"
+    )
+
+
+async def _login(client: AsyncClient, username: str, password: str):
+    return await client.post(
+        "/users/login", data={"username": username, "password": password}
+    )
+
+
+async def test_login_sets_an_httponly_strict_refresh_cookie(
+    client: AsyncClient, user_and_token
+):
+    """The session cookie is invisible to JS and unusable cross-site (gap S9)."""
+    username, password, _ = user_and_token
+
+    response = await _login(client, username, password)
+
+    cookie = _refresh_cookie_header(response).lower()
+    assert "httponly" in cookie
+    assert "samesite=strict" in cookie
+    assert "path=/users" in cookie
+    assert "max-age=" in cookie
+    # Not `Secure` by default: a browser would drop it over the plain HTTP
+    # every local deployment runs on (REFRESH_COOKIE_SECURE flips it, S9/Q5).
+    attributes = [part.strip().lower() for part in _refresh_cookie_header(response).split(";")]
+    assert "secure" not in attributes
+
+
+async def test_access_tokens_carry_iat_and_jti(client: AsyncClient, user_and_token):
+    """`iat`/`jti` land now so revocation never needs another format change (Q8/S7)."""
+    import jwt
+
+    from chat_backend.config import settings
+
+    _, _, token = user_and_token
+    payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
+
+    assert payload["sub"].isdigit()
+    assert isinstance(payload["iat"], int)
+    assert isinstance(payload["jti"], str)
+    assert len(payload["jti"]) == 32
+
+    # Two logins, two ids: `jti` distinguishes sessions of the same user.
+    other = await _login(client, "alice", "s3cret-pw")
+    assert other.status_code == 200
+    other_payload = jwt.decode(
+        other.json()["access_token"], settings.secret_key, algorithms=["HS256"]
+    )
+    assert other_payload["jti"] != payload["jti"]
+
+
+async def test_refresh_rotates_the_token_and_mints_a_usable_access_token(
+    client: AsyncClient, user_and_token
+):
+    """One refresh, one new cookie, one new access token — and the old one dies (S7)."""
+    await _login(client, "alice", "s3cret-pw")
+    spent = client.cookies.get("refresh_token")
+    assert spent
+
+    response = await client.post("/users/refresh")
+
+    assert response.status_code == 200
+    assert response.json()["token_type"] == "bearer"
+    replacement = client.cookies.get("refresh_token")
+    assert replacement and replacement != spent
+
+    me = await client.get(
+        "/users/me",
+        headers={"Authorization": f"Bearer {response.json()['access_token']}"},
+    )
+    assert me.status_code == 200
+
+    # Replaying the spent copy is the theft scenario: no row, no session.
+    client.cookies.set("refresh_token", spent, domain="test.local", path="/users")
+    assert (await client.post("/users/refresh")).status_code == 401
+
+
+async def test_refresh_without_a_cookie_is_401(client: AsyncClient):
+    assert (await client.post("/users/refresh")).status_code == 401
+
+
+async def test_logout_revokes_the_session_server_side(
+    client: AsyncClient, user_and_token
+):
+    """Logout deletes the row — the browser copy alone was never enough (gap S7)."""
+    await _login(client, "alice", "s3cret-pw")
+
+    response = await client.post("/users/logout")
+
+    assert response.status_code == 200
+    assert response.json()["detail"] == "Logged out"
+    assert "max-age=0" in _refresh_cookie_header(response).lower()
+    # Both the jar's copy and any copy taken earlier are now worthless.
+    assert (await client.post("/users/refresh")).status_code == 401
+    client.cookies.set("refresh_token", "who-knows", domain="test.local", path="/users")
+    assert (await client.post("/users/refresh")).status_code == 401
+
+
+async def test_logout_without_a_cookie_still_succeeds(client: AsyncClient):
+    """Logout is idempotent: an expired session logs out like any other."""
+    response = await client.post("/users/logout")
+    assert response.status_code == 200
+
+
+async def test_an_expired_refresh_token_is_purged_not_accepted(
+    client: AsyncClient, user_and_token, db_session
+):
+    """`expires_at` is enforced server-side, and the dead row does not linger."""
+    from datetime import datetime, timedelta, timezone
+
+    user = (
+        await db_session.execute(select(models.User).where(models.User.username == "alice"))
+    ).scalars().one()
+    raw = auth_utils.generate_refresh_token()
+    db_session.add(
+        models.RefreshToken(
+            user_id=user.id,
+            token_hash=auth_utils.hash_refresh_token(raw),
+            expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+    )
+    await db_session.commit()
+    client.cookies.set("refresh_token", raw, domain="test.local", path="/users")
+
+    assert (await client.post("/users/refresh")).status_code == 401
+
+    rows = (
+        await db_session.execute(
+            select(models.RefreshToken).where(
+                models.RefreshToken.token_hash == auth_utils.hash_refresh_token(raw)
+            )
+        )
+    ).scalars().all()
+    assert rows == []
+
+
+async def test_cookie_endpoints_reject_cross_site_requests(client: AsyncClient):
+    """CSRF layer two: `Sec-Fetch-Site`/`Origin` must say same-origin (gap S9).
+
+    `SameSite=Strict` already stops the browser sending the cookie cross-site;
+    this guard rejects the request itself, so the answer is a `403` either way.
+    """
+    assert (
+        await client.post("/users/refresh", headers={"Sec-Fetch-Site": "cross-site"})
+    ).status_code == 403
+    assert (
+        await client.post("/users/logout", headers={"Origin": "https://evil.example"})
+    ).status_code == 403
+    assert (
+        await client.post(
+            "/users/login",
+            data={"username": "alice", "password": "s3cret-pw"},
+            headers={"Origin": "https://evil.example"},
+        )
+    ).status_code == 403
+
+    # A genuine same-origin browser request passes the guard and reaches the
+    # route: same authority as `Host`, so this is the 401 for the missing cookie.
+    same_origin = await client.post("/users/refresh", headers={"Origin": "http://test"})
+    assert same_origin.status_code == 401
+

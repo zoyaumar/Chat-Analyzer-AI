@@ -12,6 +12,7 @@ import { setupServer } from "msw/node";
 import Chat from "./Chat";
 import { handlers, mswMessage, mswState, resetMswState } from "../test/handlers";
 import { renderWithQueryClient } from "../test/renderWithQueryClient";
+import { clearAccessToken, setAccessToken } from "../auth/token";
 import type { ChatSocketOptions } from "../realtime/useChatSocket";
 
 vi.mock("../auth/useAuth", () => ({
@@ -51,6 +52,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   socket.options = null;
+  clearAccessToken();
   localStorage.clear();
   server.resetHandlers();
   resetMswState();
@@ -58,7 +60,8 @@ afterEach(() => {
 afterAll(() => server.close());
 
 beforeEach(() => {
-  localStorage.setItem("token", "msw-token");
+  // The API client reads the bearer token from memory, not storage (gap S9).
+  setAccessToken("msw-token");
 });
 
 describe("Chat page against the API (MSW)", () => {

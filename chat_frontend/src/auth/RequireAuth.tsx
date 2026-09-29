@@ -3,8 +3,14 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./useAuth";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { isAuthenticated, sessionExpired } = useAuth();
+  const { isAuthenticated, initialised, sessionExpired } = useAuth();
   const location = useLocation();
+
+  // The refresh cookie is still being checked (gap S9): a blank moment beats
+  // bouncing a signed-in user through the login page on every reload.
+  if (!initialised) {
+    return null;
+  }
 
   if (!isAuthenticated) {
     return (

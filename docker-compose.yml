@@ -30,6 +30,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://chat:chat@db:5432/chat_analyzer
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env (see .env.example)}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-14}
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
     depends_on:
       db:
         condition: service_healthy

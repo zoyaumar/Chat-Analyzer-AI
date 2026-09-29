@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     debug: bool = False
 
+    # Session lifetime (gaps S7/S9, Q5/Q9): the access token stays short and
+    # stateless; the rotating refresh token is the revocable half and therefore
+    # the one that sets the session's outer bound — 14 days of a browser that
+    # never refreshes, renewed on every refresh (sliding expiry).
+    refresh_token_expire_days: int = Field(default=14, gt=0)
+    # `Secure` would make a browser drop the cookie over plain HTTP, so it is a
+    # switch rather than a constant: flip it in any deployment that terminates
+    # TLS (Q5). `HttpOnly` and `SameSite=Strict` are unconditional (S9).
+    refresh_cookie_secure: bool = False
+
     # Connection pool (gap D9): env-overridable so a hosted deployment can tune
     # to its pooler's limit without a code change.
     db_pool_size: int = 5

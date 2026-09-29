@@ -84,3 +84,27 @@ class MessageSentiment(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+
+class RefreshToken(Base):
+    """A revocable session — the stored half of the refresh flow (gaps S7/S9, Q9).
+
+    Only the SHA-256 hash of the token is stored: a leaked database row is not
+    a usable credential, and rotation deletes the row on every use, so replaying
+    a copy that the real client has already refreshed finds nothing (Q9).
+
+    `user_id` cascades with the account: deleting a user takes their sessions
+    with it, in the same `DELETE` as the messages (gap D4).
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = Column(Integer, primary_key=True, index=True)
+    token_hash: Mapped[str] = Column(String(64), unique=True, nullable=False, index=True)
+    user_id: Mapped[int] = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=False)
+

@@ -112,6 +112,16 @@ export const handlers = [
     HttpResponse.json({ access_token: "msw-token", token_type: "bearer" })
   ),
 
+  // The refresh cookie flow (gaps S7/S9): renewal and revocation endpoints the
+  // auth context boot and logout talk to.
+  http.post("/users/refresh", () =>
+    HttpResponse.json({ access_token: "msw-refreshed-token", token_type: "bearer" })
+  ),
+
+  http.post("/users/logout", () =>
+    HttpResponse.json({ detail: "Logged out" })
+  ),
+
   http.post("/analytics/sentiment", () =>
     HttpResponse.json({ label: "POSITIVE", score: 0.99 })
   ),

@@ -2,10 +2,18 @@
  * The whole HTTP layer: one thin, typed wrapper over native `fetch`
  * (docs/DESIGN_DECISIONS.md Q27, gap F14).
  *
- * Requests are same-origin (Q34), so paths are relative and no base URL is needed.
- * Non-2xx responses throw an `ApiError` carrying the server's `detail`; `AuthProvider`
- * registers a handler so a 401 ends the session (gaps F4/F5).
+ * Requests are same-origin (Q34), so paths are relative, no base URL is needed,
+ * and the refresh cookie rides along with every same-origin request (S9).
+ * Non-2xx responses throw an `ApiError` carrying the server's `detail`.
+ *
+ * Authentication and renewal (gaps S4/F4/F5/S7/S9): the bearer token is read
+ * from the in-memory session store, never from storage. A `401` asks the
+ * session refresher — registered by `AuthProvider` — for a fresh token once and
+ * replays the request; a `401` that survives that (or finds no refresher) ends
+ * the session through the registered unauthorized handler.
  */
+
+import { getAccessToken } from "./auth/token";
 
 type UnauthorizedHandler = () => void;
 
@@ -14,6 +22,20 @@ let unauthorizedHandler: UnauthorizedHandler | null = null;
 /** Registered by `AuthProvider`; called once per rejected request. */
 export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
   unauthorizedHandler = handler;
+}
+
+/**
+ * Silent renewal: trades the refresh cookie for a new access token.
+ * Single-flight and `false`-able — a `401` is retried only when it answers
+ * `true`, so a failed refresh ends the session instead of looping (gap S7).
+ */
+type SessionRefresher = () => Promise<boolean>;
+
+let sessionRefresher: SessionRefresher | null = null;
+
+/** Registered by `AuthProvider` for as long as a session could need renewing. */
+export function setSessionRefresher(refresher: SessionRefresher | null): void {
+  sessionRefresher = refresher;
 }
 
 /** A failed request: a non-2xx response, or status `0` when the network failed. */
@@ -42,6 +64,10 @@ export function isUnauthorized(error: unknown): boolean {
 interface RequestOptions {
   /** Login must not trigger the session-expired redirect on its own 401. */
   skipUnauthorizedHandler?: boolean;
+  /** Refresh and logout must not recurse into a refresh of their own (S7). */
+  skipRefresh?: boolean;
+  /** Internal: the post-refresh replay — one rescue attempt per request. */
+  retried?: boolean;
 }
 
 async function readBody(response: Response): Promise<unknown> {
@@ -68,7 +94,7 @@ async function request<T>(
   options: RequestOptions = {}
 ): Promise<T> {
   const headers = new Headers({ Accept: "application/json" });
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
@@ -93,6 +119,15 @@ async function request<T>(
 
   if (!response.ok) {
     if (response.status === 401 && !options.skipUnauthorizedHandler) {
+      // One rescue attempt: renew via the refresh cookie, then replay the
+      // request with the new token. A renewal that fails — or a replay that
+      // still 401s — ends the session (gaps S7/S9).
+      if (sessionRefresher && !options.skipRefresh && !options.retried) {
+        const renewed = await sessionRefresher();
+        if (renewed) {
+          return request<T>(method, path, body, { ...options, retried: true });
+        }
+      }
       unauthorizedHandler?.();
     }
     throw new ApiError(

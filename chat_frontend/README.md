@@ -82,11 +82,16 @@ Tailwind CSS 4 is wired through the `@tailwindcss/vite` plugin in `vite.config.t
 
 ## State & auth
 
-- The JWT lives in `localStorage` under the key `token`.
+- The access token lives in **memory only** (`src/auth/token.ts`); nothing JavaScript can
+  read survives a reload. The durable half of the session is the rotating refresh token in
+  an `HttpOnly` cookie (gaps S7/S9) — a pre-S9 `localStorage` copy is adopted once on boot
+  and deleted either way.
 - `apiClient.ts` is the whole HTTP layer: `apiGet`/`apiPost`/`apiDelete` over native `fetch`
-  attach `Authorization: Bearer <token>`, build query strings, serialize JSON bodies (form-encoded
-  for the login), return parsed JSON and throw a typed `ApiError` (`status`, plus the server's
-  `detail`; `status` is `0` for a network failure). A non-login 401 notifies `AuthProvider`.
+  attach `Authorization: Bearer <token>` (read from memory), build query strings, serialize
+  JSON bodies (form-encoded for the login), return parsed JSON and throw a typed `ApiError`
+  (`status`, plus the server's `detail`; `status` is `0` for a network failure). A non-login
+  401 asks the registered session refresher once for a fresh token and replays the request;
+  a 401 that survives that notifies `AuthProvider` and ends the session.
 - `api.ts` maps endpoint calls onto that client: it owns the
   `before`/`before_id` query mapping for `MessagePageParams` and the owner-only delete call.
 - `messages.ts` merges paginated REST results and socket frames by `id`, preserving chronological
@@ -99,7 +104,9 @@ Tailwind CSS 4 is wired through the `@tailwindcss/vite` plugin in `vite.config.t
   pages survive a send or a delete.
 - `Chat.tsx` renders one `useMessageFeed()` object (messages, loading flag, "load older" cursor,
   error) and calls the send/delete mutations; `main.tsx` mounts the single `QueryClientProvider`.
-- `AuthProvider` validates the token, owns the current user id, schedules expiry, registers the
-  401 handler via `setUnauthorizedHandler` and clears it on sign-out; `RequireAuth` protects
-  private routes.
+- `AuthProvider` validates the in-memory token, owns the current user id, runs the boot
+  refresh (the refresh cookie is the only way in — `RequireAuth` waits for `initialised`, so
+  there is no login flash), renews proactively at expiry, registers the 401 handler and the
+  silent refresher via `setUnauthorizedHandler`/`setSessionRefresher`, and revokes the
+  session server-side on sign-out; `RequireAuth` protects private routes.
 - `Login.tsx` stores the token through the provider and shows a session-expired notice.

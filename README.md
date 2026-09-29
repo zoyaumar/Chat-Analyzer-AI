@@ -73,7 +73,7 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Auth | `GET /users/me` profile lookup | ✅ | — |
 | Auth | `GET /users/{user_id}` public profile (id, username, `created_at`) | ✅ | — |
 | Auth | Account deletion (`DELETE /users/me`, messages cascade) | ✅ | — |
-| Auth | Refresh tokens + server-side logout | 🔨 | M4 |
+| Auth | Refresh tokens + server-side logout (rotating, hashed, `HttpOnly` cookie) | ✅ | — |
 | Chat | Send a message (REST, persisted) | ✅ | — |
 | Chat | List messages | ✅ auth-required, user-scoped, bounded keyset API with load-older UI | — |
 | Chat | Delete your own message | ✅ owner-only control; confirmed deletion is removed from the feed | — |
@@ -378,7 +378,9 @@ deploy. It is done when all of the following are true:
 | `DATABASE_URL` | yes | – | Async SQLAlchemy URL for PostgreSQL, e.g. `postgresql+asyncpg://…` (M1). |
 | `DATABASE_URL_SYNC` | no | derived from `DATABASE_URL` | Sync URL (`postgresql+psycopg://…`) used only by Alembic, which runs migrations outside the async engine (M1). |
 | `SECRET_KEY` | yes | – | HMAC key used to sign JWTs. There is no insecure fallback; startup fails when it is missing. |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Token lifetime, read through the settings object. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Access-token lifetime, read through the settings object. |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | no | `14` | Refresh-token lifetime in days — the rotating, revocable half of the session (S7/Q9); renewed on every refresh. |
+| `REFRESH_COOKIE_SECURE` | no | `false` | Sets `Secure` on the refresh cookie; flip on behind TLS, off for plain-HTTP local dev. `HttpOnly` and `SameSite=Strict` are unconditional (S9/Q5). |
 | `DEBUG` | no | `false` | Sets the JSON log level to DEBUG (O5); it does not expose the removed `/test-db` route. |
 | `DB_POOL_SIZE` | no | `5` | Base async SQLAlchemy pool size (D9). |
 | `DB_MAX_OVERFLOW` | no | `10` | Connections allowed beyond `DB_POOL_SIZE` before the pool blocks (D9). |
@@ -402,6 +404,8 @@ DATABASE_URL=postgresql+asyncpg://app:app@db:5432/chat_analyzer
 DATABASE_URL_SYNC=postgresql+psycopg://app:app@db:5432/chat_analyzer
 SECRET_KEY=replace-with-a-long-random-string
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=14
+REFRESH_COOKIE_SECURE=false
 ```
 
 Example `.env` for a hosted Postgres instance such as Supabase (note the driver and TLS
@@ -792,7 +796,7 @@ The backlog is ordered into milestones so that "shippable" has a definition inst
 
 | Work | Gaps |
 | --- | --- |
-| Refresh tokens, server-side logout, `HttpOnly` cookie session | S7, Q5, Q9 |
+| ~~Refresh tokens, server-side logout, `HttpOnly` cookie session~~ ✅ | S7 ✅, Q5 ✅, Q9 ✅ |
 | Password/username policy, rate limiting on login and register | S6 |
 | Automated accessibility audit (axe) and Tailwind design tokens | F12 follow-up |
 | Upgrade the Python pins that carry advisories (`transformers`, Starlette/FastAPI) | D8, O12 |

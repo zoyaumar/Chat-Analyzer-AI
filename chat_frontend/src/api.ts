@@ -16,6 +16,27 @@ export const registerUser = (data: { username: string; password: string }) =>
 export const loginUser = (data: { username: string; password: string }) =>
   apiPost<TokenResponse>("/users/login", new URLSearchParams(data), {
     skipUnauthorizedHandler: true,
+    // A wrong password must not "rescue" itself by renewing — and must never
+    // log a signed-in user out of the app over a typo on the login form.
+    skipRefresh: true,
+  });
+
+/**
+ * Trade the refresh cookie for a new access token (gaps S7/S9, Q9). The
+ * cookie is `HttpOnly`, so only the browser carries it — this call is the
+ * *only* thing that can spend it, and it never triggers its own refresh.
+ */
+export const refreshSession = () =>
+  apiPost<TokenResponse>("/users/refresh", undefined, {
+    skipUnauthorizedHandler: true,
+    skipRefresh: true,
+  });
+
+/** Revoke the session's refresh token server-side and retire the cookie (S7). */
+export const logoutUser = () =>
+  apiPost<{ detail: string }>("/users/logout", undefined, {
+    skipUnauthorizedHandler: true,
+    skipRefresh: true,
   });
 
 /** A message author's name, for attribution in the feed (gap F10). */

@@ -1,6 +1,18 @@
 import { jwtDecode } from "jwt-decode";
 
-const TOKEN_KEY = "token";
+/**
+ * The access token lives **in memory only** (gaps S7/S9, Q5/Q9).
+ *
+ * Nothing JavaScript-readable survives a reload: the durable half of the
+ * session is a refresh token in an `HttpOnly` cookie the DOM never sees, and
+ * `AuthProvider` trades it for a fresh access token on boot. The legacy
+ * `localStorage` key — the storage gap S9 — is read once, adopted if still
+ * valid, and deleted either way, so an already-signed-in browser migrates off
+ * the XSS-readable copy on its first visit after this ships.
+ */
+const LEGACY_TOKEN_KEY = "token";
+
+let accessToken: string | null = null;
 
 export interface TokenPayload {
   sub: string;
@@ -23,24 +35,43 @@ function decodeToken(token: string): TokenPayload | null {
   }
 }
 
-export function getValidStoredToken(): string | null {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) return null;
+/** The in-memory token as it stands — valid or not. */
+export function getAccessToken(): string | null {
+  return accessToken;
+}
 
-  const payload = decodeToken(token);
+/** The in-memory token only while it is still usable; expired means cleared. */
+export function getValidAccessToken(): string | null {
+  if (!accessToken) return null;
+  const payload = decodeToken(accessToken);
   if (!payload || payload.exp * 1000 <= Date.now()) {
-    clearStoredToken();
+    accessToken = null;
     return null;
   }
-  return token;
+  return accessToken;
 }
 
-export function setStoredToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+export function setAccessToken(token: string): void {
+  accessToken = token;
 }
 
-export function clearStoredToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+export function clearAccessToken(): void {
+  accessToken = null;
+}
+
+/**
+ * Adopt the pre-S9 `localStorage` token — if it still qualifies — and remove
+ * the stored copy in every case. Moving it out of `localStorage` is the whole
+ * point (gap S9); keeping an expired one around would only preserve the leak.
+ */
+export function takeLegacyToken(): string | null {
+  const stored = localStorage.getItem(LEGACY_TOKEN_KEY);
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
+  if (!stored) return null;
+  const payload = decodeToken(stored);
+  if (!payload || payload.exp * 1000 <= Date.now()) return null;
+  accessToken = stored;
+  return stored;
 }
 
 export function getTokenUserId(token: string | null): number | null {

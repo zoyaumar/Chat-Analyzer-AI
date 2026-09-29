@@ -5,8 +5,10 @@ import {
   apiGet,
   apiPost,
   isApiError,
+  setSessionRefresher,
   setUnauthorizedHandler,
 } from "./apiClient";
+import { clearAccessToken, setAccessToken } from "./auth/token";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -39,19 +41,20 @@ describe("apiClient", () => {
   }
 
   beforeEach(() => {
-    localStorage.clear();
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
   });
 
   afterEach(() => {
     setUnauthorizedHandler(null);
+    setSessionRefresher(null);
+    clearAccessToken();
     vi.unstubAllGlobals();
     localStorage.clear();
   });
 
-  it("attaches the stored bearer token and returns parsed JSON", async () => {
-    localStorage.setItem("token", "test-token");
+  it("attaches the in-memory bearer token and returns parsed JSON", async () => {
+    setAccessToken("test-token");
     respond(200, []);
 
     await expect(getMessages({ limit: 50 })).resolves.toEqual([]);
@@ -121,5 +124,53 @@ describe("apiClient", () => {
 
     await captureError(() => loginUser({ username: "zoya", password: "secret" }));
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes the session once on a 401 and replays with the new token", async () => {
+    setAccessToken("stale-token");
+    // The refresher stands in for AuthProvider: it renews and answers `true`.
+    const refresher = vi.fn(async () => {
+      setAccessToken("fresh-token");
+      return true;
+    });
+    setSessionRefresher(refresher);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { detail: "Invalid token" }))
+      .mockResolvedValueOnce(jsonResponse(200, []));
+
+    await expect(getMessages()).resolves.toEqual([]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refresher).toHaveBeenCalledTimes(1);
+    const [, retryInit] = lastRequest(fetchMock);
+    expect(new Headers(retryInit.headers).get("Authorization")).toBe("Bearer fresh-token");
+  });
+
+  it("ends the session when the refresh cannot rescue the 401", async () => {
+    setAccessToken("stale-token");
+    const handler = vi.fn();
+    const refresher = vi.fn().mockResolvedValue(false);
+    setSessionRefresher(refresher);
+    setUnauthorizedHandler(handler);
+    respond(401, { detail: "Invalid token" });
+
+    const error = await captureError(() => getMessages());
+
+    expect(error.status).toBe(401);
+    // One renewal attempt, no blind replay, then the session ends.
+    expect(refresher).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("never refreshes on the login request itself", async () => {
+    const refresher = vi.fn().mockResolvedValue(true);
+    setSessionRefresher(refresher);
+    respond(401, { detail: "Incorrect username or password" });
+
+    await captureError(() => loginUser({ username: "zoya", password: "wrong" }));
+
+    expect(refresher).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
