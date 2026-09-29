@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Chat from "./Chat";
+import { expectNoA11yViolations } from "../test/a11y";
 import { renderWithQueryClient } from "../test/renderWithQueryClient";
 import type { Message } from "../types";
 import {
@@ -77,6 +78,17 @@ describe("Chat", () => {
     socket.status = "connected";
     socket.options = null;
     socket.send.mockReset();
+  });
+
+  it("renders the whole screen without axe violations", async () => {
+    getMessages.mockResolvedValue([messageAt(12, 0, "Hello there")]);
+
+    renderWithQueryClient(<Chat />);
+    await screen.findByText("Hello there");
+
+    // The page, not the wrapper: `document.body` is the context axe applies
+    // its landmark rules to (see `../test/a11y`).
+    await expectNoA11yViolations(document.body);
   });
 
   it("deletes a message owned by the current user", async () => {

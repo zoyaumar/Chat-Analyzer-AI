@@ -38,11 +38,14 @@ jobs:
         run: ruff check chat_backend tests alembic
       - name: Type-check
         run: mypy
-      # Reports, but does not gate yet (gap O12). The pins in requirements.txt
-      # carry known advisories — `transformers 4.53.0` and `starlette 0.47.3`
-      # (via `fastapi 0.116.1`) — and clearing them is a coordinated upgrade,
-      # tracked as gap D8 with the A7 evaluation fixtures as the safety net.
-      # It runs here so the list can be seen and cannot grow unnoticed.
+      # Reports, but does not gate yet (gap O12). Everything the pins control
+      # now audits clean — fastapi/starlette, python-multipart, python-dotenv
+      # were all moved off their advisories. What is left is `transformers
+      # 4.53.0`: 12 advisories, 9 of which have no fixed release at all and 3
+      # of which are only fixed in the 5.x line (a major bump this suite's
+      # model fixtures would have to be re-validated against, with the A7
+      # evaluation as the safety net). Until that migration happens, this step
+      # lists the remainder so it cannot grow unnoticed.
       - name: Audit dependencies (gap O12)
         continue-on-error: true
         run: |

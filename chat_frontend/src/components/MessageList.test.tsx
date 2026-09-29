@@ -7,6 +7,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import MessageList from "./MessageList";
+import { expectNoA11yViolations } from "../test/a11y";
 import type { Message } from "../types";
 
 // `globals` is off in `vite.config.ts`, so nothing removes the previous render
@@ -40,6 +41,15 @@ function renderFeed(
 }
 
 describe("MessageList", () => {
+  it("the feed itself has no axe violations", async () => {
+    const { container } = renderFeed(
+      [messageAt(4, 2, "Hello there"), messageAt(5, 1, "Hi bob")],
+      { 2: "bob" }
+    );
+
+    await expectNoA11yViolations(container);
+  });
+
   it("names another author from the usernames it was given", () => {
     renderFeed([messageAt(4, 2, "Hello there")], { 2: "bob" });
 

@@ -49,7 +49,8 @@ conversation text.
 
 The project is built around four ideas:
 
-1. **A real backend, not a mock.** Passwords are bcrypt-hashed, every mutating endpoint is
+1. **A real backend, not a mock.** Passwords are argon2id-hashed (bcrypt hashes written before
+   the migration still verify), every mutating endpoint is
    JWT-protected, and the schema is owned by Alembic migrations against PostgreSQL.
 2. **Analytics as a first-class feature.** Message text can be scored for sentiment and
    aggregated into a daily summary, so the chat is more than a CRUD demo — and analysis is
@@ -66,7 +67,7 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 
 | Area | Feature | Status | Milestone |
 | --- | --- | --- | --- |
-| Auth | Registration with bcrypt-hashed passwords | ✅ | — |
+| Auth | Registration with argon2id-hashed passwords (legacy bcrypt rehashed on login) | ✅ | — |
 | Auth | Login → signed JWT (HS256, `PyJWT`, configurable lifetime) | ✅ | — |
 | Auth | Bearer-token guard on protected endpoints | ✅ | — |
 | Auth | `GET /users/me` profile lookup | ✅ | — |
@@ -112,7 +113,7 @@ flowchart LR
         R_MSG["/messages"]
         R_ANA["/analytics"]
         R_WS["/ws/chat"]
-        AUTH["auth_utils - PyJWT + bcrypt"]
+        AUTH["auth_utils - PyJWT + pwdlib (argon2/bcrypt)"]
         ROUTES["route handlers / DB queries"]
     end
 
@@ -169,7 +170,7 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Framework | FastAPI, routers split per resource; OpenAPI at `/docs` | in use |
 | ORM | SQLAlchemy 2.0 — `AsyncSession` + `asyncpg` | ✅ async stack |
 | Validation | Pydantic v2 (`from_attributes`) | in use |
-| Auth | **PyJWT** (`HS256`) + bcrypt password hashing | PyJWT ✅ (since M1) |
+| Auth | **PyJWT** (`HS256`) + argon2id password hashing via `pwdlib` (bcrypt verifies legacy hashes) | PyJWT ✅ (since M1) |
 | Database | PostgreSQL 16 in Docker Compose, with a managed database optional for hosting | ✅ Compose for local development |
 | Migrations | Alembic as the only writer of DDL | ✅ (`create_all()` removed) |
 | Config | One `pydantic-settings` object reading `.env`, failing fast on missing secrets | ✅ |
@@ -191,7 +192,7 @@ Legend: **in use** today · **M1–M4** the milestone that introduces it · **op
 | Same-origin access | Vite dev proxy + nginx `web` container in production | in place (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
-| Tests | Vitest + React Testing Library + MSW | in use (61 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, MSW page-level) |
+| Tests | Vitest + React Testing Library + MSW | in use (70 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, MSW page-level, axe accessibility) |
 
 ## Repository layout
 
@@ -346,7 +347,7 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 | `npm run build` | `chat_frontend/` | type-check (`tsc -b`) + production bundle |
 | `npm run lint` | `chat_frontend/` | ESLint over the SPA |
 | `npm audit --omit=dev --audit-level=high` | `chat_frontend/` | CVE gate for the production dependency tree (O12) |
-| `npm test` | `chat_frontend/` | Vitest suite (61 tests across 11 files: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, attribution, MSW page-level, CSP baseline) |
+| `npm test` | `chat_frontend/` | Vitest suite (70 tests across 12 files: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, attribution, MSW page-level, CSP baseline, axe accessibility audits) |
 | `py -m compileall chat_backend` | repo root | quick syntax check of the backend |
 
 ## Definition of shippable
@@ -481,7 +482,8 @@ curl -X POST http://127.0.0.1:8000/users/register \
 
 Failure modes: `400 Username already registered`; `422` when the credential policy rejects the
 input — `username` 3–32 characters of `[A-Za-z0-9._-]`, `password` at least 8 characters and at most
-72 bytes (bcrypt hashes no more than that, and passlib would otherwise truncate silently); `429 Too
+72 bytes (bcrypt hashes no more than that — the pre-S10 `passlib` stack truncated the rest
+silently, and `bcrypt >= 4.1` now refuses longer input, which the login route answers as a `401`); `429 Too
 many attempts` with a `Retry-After` header once this address has spent its registration budget
 (S6, five per hour by default).
 </details>
@@ -678,18 +680,21 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 109 passing, 2 skipped (the opt-in A7 evaluation; needs a Postgres, see below) |
+| Backend tests | `py -m pytest` | ✅ 114 passing, 2 skipped (the opt-in A7 evaluation; needs a Postgres, see below) |
 | Migrations against an empty database | `alembic upgrade head` + `alembic downgrade base` | ✅ verified on PostgreSQL 16, both directions |
 | Models vs migrations | `alembic check` | ✅ no drift |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | ✅ clean (non-strict + pydantic/SQLAlchemy plugins) |
-| Frontend tests | `cd chat_frontend && npm test` | ✅ 61 passing (11 files) |
+| Frontend tests | `cd chat_frontend && npm test` | ✅ 70 passing (12 files) |
 | Frontend production dependency audit | `cd chat_frontend && npm audit --omit=dev --audit-level=high` | ✅ 0 vulnerabilities |
-| Python dependency audit | `python -m pip_audit` | 🟡 reports advisories in the current pins — see D8/O12 |
+| Python dependency audit | `python -m pip_audit` | 🟡 `transformers 4.53.0` only — 12 advisories, 9 with no fixed release upstream; everything else audits clean (D8/O12) |
 | CI (all of the above on every push) | GitHub Actions | ✅ backend + frontend jobs |
 
 **Backend test suite.** `tests/` covers register/login (happy path, duplicate username, wrong
-password), the credential policy and its rate limits (username shape, password length, the 72-byte
+password) and the hash migration itself (S10: a bcrypt hash written before the migration still
+logs in and is rewritten to `$argon2id$`, a new account is argon2 from the start, and unusable
+stored hashes answer `401` rather than `500`), the credential policy and its rate limits
+(username shape, password length, the 72-byte
 bcrypt cap, and a `429` with `Retry-After` per client address — `test_rate_limit.py`), `GET
 /users/me` and `GET /users/{user_id}` (with/without token, safe projection), message
 create/list/delete with ownership checks, analytics with fake models (no weights are
@@ -716,12 +721,14 @@ by default (override with `TEST_DATABASE_URL`), creates the schema from metadata
 redirects, valid-token access, token-expiry handling, REST/socket message de-duplication, the
 owner-only delete and composer interactions, the analytics actions, the keyset "load older" cursor,
 the `fetch` client (token header, query mapping, `ApiError`, 401 handler) and the TanStack Query
-retry policy — 61 tests across 11 files, including the `useChatSocket` hook (heartbeat, backoff,
+retry policy — 70 tests across 12 files, including the `useChatSocket` hook (heartbeat, backoff,
 auth rejection, HTTP fallback), the defensive `parseFrame` protocol tests, MSW page-level tests
 that run the real `apiClient`/query stack against `src/test/handlers.ts` (one of which asserts that
 two messages from the same author cost exactly one profile request), the attribution and
-accessibility contract of `MessageList`, and the index.html CSP baseline. A dedicated login-form
-test remains open.
+accessibility contract of `MessageList`, the index.html CSP baseline, and the axe accessibility
+audits (`src/test/a11y.test.tsx` over Login/Register/Analytics, plus the feed and whole-Chat-page
+audits, with a negative test proving the audit still fails on broken markup). A dedicated
+login-form test remains open.
 
 A model is never loaded by either suite; the only place that touches real weights is
 `RUN_AI_EVAL=1 pytest tests/test_ai_eval.py`, which is skipped by default.

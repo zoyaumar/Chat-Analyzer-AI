@@ -48,7 +48,7 @@ export default function Analytics() {
   return (
     <div>
       <Navbar />
-      <div className="p-4">
+      <main className="p-4">
         <h1 className="text-xl mb-4">Analytics</h1>
 
         <div className="mb-6 max-w-2xl">
@@ -82,9 +82,16 @@ export default function Analytics() {
             </button>
           </div>
           {sentiment.data && (
-            <div className="mt-3 p-3 bg-gray-50 border rounded text-sm">
-              <span className="font-semibold capitalize">{sentiment.data.label}</span> (
-              {(sentiment.data.score * 100).toFixed(1)}% confidence)
+            <div
+              role="status"
+              className="mt-3 p-3 bg-gray-50 border rounded text-sm"
+            >
+              {/* The result appears without moving focus, so it has to say what
+                  it is as well as what it says (gap F12). The explicit `{" "}`
+                  is load-bearing: JSX drops the newline between the spans. */}
+              <span className="sr-only">Sentiment:</span>{" "}
+              <span className="font-semibold capitalize">{sentiment.data.label}</span>{" "}
+              ({(sentiment.data.score * 100).toFixed(1)}% confidence)
             </div>
           )}
         </div>
@@ -104,15 +111,18 @@ export default function Analytics() {
             {summary.isFetching ? "Generating Summary..." : "Get Daily Summary"}
           </button>
           {summary.data && (
-            <div className="mt-3 p-3 bg-gray-50 border rounded text-sm">
-              <div className="font-semibold text-gray-700 mb-1">
+            <div
+              role="status"
+              className="mt-3 p-3 bg-gray-50 border rounded text-sm"
+            >
+              <h3 className="font-semibold text-gray-700 mb-1">
                 Summary for {summary.data.date}
-              </div>
+              </h3>
               <p className="text-gray-800">{summary.data.summary}</p>
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

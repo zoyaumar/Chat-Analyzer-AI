@@ -61,4 +61,52 @@ describe("Analytics", () => {
     expect(screen.getByText("Summary for 2026-01-01")).toBeInTheDocument();
     expect(getDailySummary).toHaveBeenCalledTimes(1);
   });
+
+  // --- Screen-reader pass (gap F12, the remainder) --------------------------
+  // The axe audit proves nothing is *broken*; these prove the things a
+  // screen-reader user needs that axe cannot see: async results must be
+  // announced, the announcement has to name what it is reporting, and the page
+  // has to be navigable by heading.
+
+  it("announces the sentiment result as a live region that names itself", async () => {
+    analyzeSentiment.mockResolvedValue({ label: "positive", score: 0.987 });
+    renderWithQueryClient(<Analytics />);
+
+    fireEvent.change(screen.getByLabelText("Sentiment text"), {
+      target: { value: "I love this" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+
+    // Focus stays on the button, so only a polite live region makes the answer
+    // reach the user at all — and it must not arrive as a bare "positive".
+    const result = await screen.findByRole("status");
+    expect(result).toHaveTextContent(/^Sentiment:\s+positive \(98\.7% confidence\)$/);
+  });
+
+  it("announces the daily summary under a heading for its date", async () => {
+    getDailySummary.mockResolvedValue({ date: "2026-01-01", summary: "All good today." });
+    renderWithQueryClient(<Analytics />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Get Daily Summary" }));
+
+    const result = await screen.findByRole("status");
+    expect(result).toHaveTextContent("All good today.");
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Summary for 2026-01-01" })
+    ).toBeInTheDocument();
+  });
+
+  it("exposes a heading hierarchy a screen reader can navigate", () => {
+    renderWithQueryClient(<Analytics />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Analytics" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Sentiment Analysis" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Daily Summary" })
+    ).toBeInTheDocument();
+  });
 });

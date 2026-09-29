@@ -1,6 +1,8 @@
+import bcrypt
 from httpx import AsyncClient
+from sqlalchemy import select
 
-from chat_backend import models
+from chat_backend import auth_utils, models
 from chat_backend.auth_utils import create_access_token
 
 
@@ -144,3 +146,113 @@ async def test_an_account_that_predates_the_policy_still_serialises(client, db_s
 
     assert response.status_code == 200
     assert response.json()["username"] == "a"
+
+
+# --- Password hashing (gap S10) ---------------------------------------------
+# `passlib` (last released 2020) is replaced by `pwdlib`: argon2id writes every
+# new hash and bcrypt stays in the hasher list only so accounts written before
+# the migration still open. The tests below are the proof the migration
+# invalidated nobody, and that every way a stored hash can be unusable answers
+# with a credential failure instead of a server error.
+
+
+def _bcrypt_hash(password: str) -> str:
+    """A hash exactly as the pre-S10 app wrote one (passlib over bcrypt)."""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
+
+
+async def _insert_legacy_user(
+    db_session, username: str, password: str
+) -> models.User:
+    """Insert an account whose hash predates argon2 becoming the active hasher."""
+    user = models.User(username=username, password_hash=_bcrypt_hash(password))
+    db_session.add(user)
+    await db_session.commit()
+    return user
+
+
+async def test_a_hash_written_before_the_migration_still_logs_in(
+    client: AsyncClient, db_session
+):
+    """Keeping bcrypt as a *verifier* is the whole point of the hasher list."""
+    await _insert_legacy_user(db_session, "grandma", "pw123456")
+
+    response = await client.post(
+        "/users/login", data={"username": "grandma", "password": "pw123456"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["access_token"]
+
+
+async def test_the_login_that_proves_an_old_hash_rewrites_it(
+    client: AsyncClient, db_session
+):
+    """Rehash on login: the successful password entry *is* the migration step.
+
+    No backfill script and no lockout window — the account upgrades itself, and
+    because the replacement already came from argon2 the next login has nothing
+    left to rewrite.
+    """
+    user = await _insert_legacy_user(db_session, "grandma", "pw123456")
+
+    assert (
+        await client.post(
+            "/users/login", data={"username": "grandma", "password": "pw123456"}
+        )
+    ).status_code == 200
+    await db_session.refresh(user)
+    assert user.password_hash.startswith("$argon2id$")
+    assert auth_utils.verify_and_rehash("pw123456", user.password_hash) == (True, None)
+
+
+async def test_a_new_account_is_hashed_with_argon2(client: AsyncClient, db_session):
+    """Registration never writes bcrypt again (gap S10, decided in Q6)."""
+    assert (
+        await client.post(
+            "/users/register", json={"username": "newbie", "password": "pw123456"}
+        )
+    ).status_code == 200
+
+    stored = (
+        (await db_session.execute(select(models.User).where(models.User.username == "newbie")))
+        .scalars()
+        .one()
+    )
+    assert stored.password_hash.startswith("$argon2id$")
+    assert auth_utils.verify_password("pw123456", stored.password_hash)
+
+
+async def test_a_password_the_legacy_hasher_refuses_is_a_401_not_a_500(
+    client: AsyncClient, db_session
+):
+    """bcrypt >= 4.1 raises `ValueError` past 72 bytes instead of truncating.
+
+    The registration policy (S6) keeps new passwords inside that limit, so the
+    only way to reach this is a hash written *before* the policy existed — and
+    an unusable credential must still be a `401`, never a crash in the route.
+    """
+    await _insert_legacy_user(db_session, "longshot", "x" * 72)
+
+    response = await client.post(
+        "/users/login", data={"username": "longshot", "password": "x" * 80}
+    )
+
+    assert response.status_code == 401
+
+
+async def test_an_unreadable_stored_hash_is_a_401_not_a_500(
+    client: AsyncClient, db_session
+):
+    """A hash naming a hasher this install does not have is not a credential."""
+    db_session.add(
+        models.User(username="corrupt", password_hash="definitely-not-a-hash")
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/users/login", data={"username": "corrupt", "password": "pw123456"}
+    )
+
+    assert response.status_code == 401
+

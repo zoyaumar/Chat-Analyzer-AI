@@ -12,11 +12,13 @@ USERNAME_MAX_LENGTH = 32
 # nothing that needs escaping in a URL, a log line or a mention.
 USERNAME_PATTERN = r"^[A-Za-z0-9._-]+$"
 PASSWORD_MIN_LENGTH = 8
-# bcrypt hashes at most 72 bytes and passlib truncates the remainder silently,
-# so with this stack `get_password_hash("x" * 80)` verifies a *different*
-# 80-character password that shares its first 72 bytes (reproduced against
-# passlib 1.7.4 + bcrypt 4.0.1). Rejecting the input turns a silent collision
-# into an honest error.
+# bcrypt is no longer the hasher that *writes* passwords — argon2id is (gap S10)
+# — but it still has to *verify* every password registered before the migration,
+# and bcrypt >= 4.1 refuses input over 72 bytes with a `ValueError` instead of
+# truncating it. Keeping registration inside that limit means both hashers accept
+# exactly the same credentials: a long password would be unverifiable rather than
+# merely collision-prone. It also bounds the cost of hashing attacker-sized input.
+# A byte cap, not a character cap — 20 emoji are already 80 bytes (gap S6).
 PASSWORD_MAX_BYTES = 72
 
 

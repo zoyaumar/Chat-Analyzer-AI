@@ -42,7 +42,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex flex-col items-center mt-20">
+    <main className="flex flex-col items-center mt-20">
       <h1 className="text-2xl mb-4">Login</h1>
 
       <form onSubmit={handleLogin} className="flex flex-col gap-3 w-64">
@@ -80,6 +80,6 @@ export default function Login() {
           {error}
         </p>
       )}
-    </div>
+    </main>
   );
 }

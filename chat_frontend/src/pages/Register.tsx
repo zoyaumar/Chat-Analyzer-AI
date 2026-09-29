@@ -32,7 +32,7 @@ export default function Register() {
   };
 
   return (
-    <div className="flex flex-col items-center mt-20">
+    <main className="flex flex-col items-center mt-20">
       <h1 className="text-2xl mb-4">Register</h1>
 
       <form onSubmit={handleRegister} className="flex flex-col gap-3 w-64">
@@ -65,6 +65,6 @@ export default function Register() {
           {error}
         </p>
       )}
-    </div>
+    </main>
   );
 }

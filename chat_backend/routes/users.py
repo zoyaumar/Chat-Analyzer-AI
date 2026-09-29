@@ -25,10 +25,22 @@ async def login(
         select(models.User).where(models.User.username == form_data.username)
     )
     user = result.scalars().first()
-    if not user or not auth_utils.verify_password(
+    credentials_error = HTTPException(
+        status_code=401, detail="Invalid username or password"
+    )
+    if user is None:
+        raise credentials_error
+    valid, rehashed = auth_utils.verify_and_rehash(
         form_data.password, user.password_hash
-    ):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+    )
+    if not valid:
+        raise credentials_error
+    if rehashed is not None:
+        # The stored hash predates gap S10 (bcrypt, or stale argon2 parameters).
+        # The login that just proved the password is the moment to rewrite it, so
+        # accounts migrate themselves instead of waiting for a backfill script.
+        user.password_hash = rehashed
+        await db.commit()
 
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}

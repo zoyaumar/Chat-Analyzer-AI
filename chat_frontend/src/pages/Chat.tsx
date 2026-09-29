@@ -134,7 +134,7 @@ export default function Chat() {
   return (
     <div>
       <Navbar />
-      <div className="p-4">
+      <main className="p-4">
         <div className="flex items-center gap-3 mb-4">
           <h1 className="text-xl">Chat</h1>
           <p role="status" className="text-sm text-gray-600">
@@ -189,7 +189,7 @@ export default function Chat() {
             {isSending ? "Sending..." : "Send"}
           </button>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
