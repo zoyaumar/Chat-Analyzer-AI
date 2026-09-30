@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -57,10 +59,35 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
         return response
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Optionally load the NLP models before the first request (gap N2).
+
+    Off unless `AI_WARMUP_ON_STARTUP` is set, and never fatal: a model that
+    cannot load records itself in `ai_utils._LOAD_FAILURES` and shows up as
+    `failed` in `/health/ready`, exactly as it would on the lazy path. Chat,
+    history and deletes must never wait on — or be blocked by — the AI layer
+    (gap A6), so nothing here is allowed to stop the app from serving.
+    """
+    if settings.ai_warmup_on_startup:
+        logger.info("Warming up NLP models before serving traffic…")
+        try:
+            # Off the event loop: this is the same blocking load a request would
+            # otherwise do, and startup is the one place it may be waited on.
+            states = await asyncio.to_thread(ai_utils.warmup)
+            logger.info("NLP warm-up finished: %s", states)
+        except Exception:
+            # Belt and braces — `warmup` already swallows per-model failures, so
+            # reaching here means something unexpected; the app still starts.
+            logger.exception("NLP warm-up failed; serving without preloaded models")
+    yield
+
+
 app = FastAPI(
     title="Chat Analyzer AI",
     description="Backend API for chat storage and analysis",
     version="0.1.0",
+    lifespan=_lifespan,
 )
 
 # No CORS middleware: the app is same-origin everywhere — Vite proxies in

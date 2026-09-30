@@ -55,5 +55,12 @@ class Settings(BaseSettings):
     ai_summary_model: str = "sshleifer/distilbart-cnn-6-6"
     ai_summary_revision: str = "d2fde4ca965ba893255479612e4b801aa6500029"
 
+    # Load the models at container start instead of on the first request. Off by
+    # default: it is right for a deployment (the cost belongs at boot, where a
+    # rolling update can wait for it) and wrong for tests and quick restarts,
+    # which would pay a model load they never use. Failures stay non-fatal
+    # either way — `ai_utils.warmup` reports them through `/health/ready`.
+    ai_warmup_on_startup: bool = False
+
 
 settings = Settings()

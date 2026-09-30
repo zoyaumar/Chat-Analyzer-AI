@@ -98,6 +98,37 @@ def sentiment_model_info() -> dict[str, str]:
     }
 
 
+def warmup() -> dict[str, str]:
+    """Load both pipelines ahead of the first request; never raises.
+
+    Lazy loading is the right default (gap A6: importing the app must touch no
+    model, so a failed download cannot stop the API from booting). The cost is
+    that the *first* summary request pays the download and the model init, and
+    a request that outlives a 30-second gateway timeout is a user-visible 504
+    for work that would have succeeded a moment later.
+
+    This is the opt-in other side of that trade: call it at container start and
+    the cost moves to boot, where a deployment can wait for it. Each capability
+    is loaded independently and failures are swallowed — they are already
+    recorded in `_LOAD_FAILURES` by `_load_pipeline`, so `model_status` and
+    `/health/ready` report them exactly as the lazy path would.
+    """
+    states: dict[str, str] = {}
+    for capability, loader in (
+        ("sentiment", _sentiment_pipeline),
+        ("summary", _summarizer),
+    ):
+        try:
+            loader()
+        except ModelUnavailableError:
+            states[capability] = "failed"
+        except Exception:  # a loader must never be able to stop the app
+            states[capability] = "failed"
+        else:
+            states[capability] = "ready"
+    return states
+
+
 @lru_cache(maxsize=256)
 def _analyze_cached(text: str) -> dict:
     """Score `text` once per distinct string and remember the answer (gap A4)."""

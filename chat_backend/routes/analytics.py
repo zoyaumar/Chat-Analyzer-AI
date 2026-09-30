@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -59,7 +60,11 @@ async def daily_summary(
 
     full_text = " ".join(msg.text for msg in messages)
     try:
-        summary = summarize_text(full_text)
+        # Off the event loop: the pipeline call is blocking CPU work, and a busy
+        # day is several sequential model calls (gap A2). Called straight, it
+        # froze every other request on this worker — chat, the WebSocket and the
+        # health probes included. The write path already does this (gap A4).
+        summary = await asyncio.to_thread(summarize_text, full_text)
     except ModelUnavailableError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return {"date": str(today), "summary": summary}

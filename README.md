@@ -381,7 +381,9 @@ run, trust and deploy. All of the following are true today:
 | `AI_SENTIMENT_REVISION` | no | pinned 40-char SHA | Exact upstream revision of the sentiment model; empty means "follow the main branch". |
 | `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (replaces `facebook/bart-large-cnn`). |
 | `AI_SUMMARY_REVISION` | no | pinned 40-char SHA | Exact upstream revision of the summary model; empty means "follow the main branch". |
-| `AI_INFERENCE_URL` | no | – | Base URL of a separate inference service — only relevant if the packaging decision to split inference out is ever taken. |
+| `AI_INFERENCE_URL` | no | – | Not implemented — the summariser and sentiment models run in the API process. Listed only so an operator does not expect it to take effect. |
+| `AI_WARMUP_ON_STARTUP` | no | `false` (`true` in Compose) | Load both models at container start rather than on the first request, so the download and init do not sit on a user request. Best-effort — failures are reported by `/health/ready`, never fatal. |
+| `API_MEMORY_LIMIT` | no | `2g` | Memory limit for the Compose `api` service, which holds both models plus torch. Set from a measured ~1.2 GB peak with headroom. |
 | `LOGIN_RATE_LIMIT` | no | `10` | Login attempts allowed per client address per window before a `429`. |
 | `LOGIN_RATE_WINDOW_SECONDS` | no | `300` | Length of that window, in seconds. |
 | `REGISTER_RATE_LIMIT` | no | `5` | Registrations allowed per client address per window. |
@@ -662,7 +664,7 @@ Requirements for any host:
 | Health probes | `/health` (liveness) and `/health/ready` (database + model readiness). |
 | Structured logs | JSON lines on stdout, one object per line, correlated by `X-Request-ID`. |
 | Security headers | CSP, `nosniff`, frame/referrer policy and HSTS on API and SPA responses; HSTS is ignored by browsers over plain HTTP until TLS terminates. |
-| Persistent volume | Only if the NLP model cache lives in the container. |
+| Persistent volume | The HuggingFace cache (`huggingface:/cache/huggingface`) keeps the model weights across restarts, so a deploy does not re-download them. |
 
 Any small VPS or container host with Compose installed is enough: `docker compose up -d --build`.
 
