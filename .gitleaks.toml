@@ -1,0 +1,31 @@
+# Gitleaks configuration.
+#
+# Run: `gitleaks git .` (full history) or `gitleaks dir .` (working tree).
+# CI runs it on every push and pull request (see .github/workflows/ci.yml).
+#
+# The default ruleset already covers AWS/GitHub/OpenAI keys, private keys,
+# database URIs with inline credentials, JWTs, etc. We extend it rather than
+# replace it, and allow-list only the two throwaway constants below.
+
+title = "Chat Analyzer AI gitleaks config"
+
+[extend]
+useDefault = true
+
+# Both entries are non-secret test fixtures, not live credentials:
+#
+#   * .github/workflows/ci.yml sets SECRET_KEY for the ephemeral CI database
+#     job. It exists only for the life of a CI run and protects nothing.
+#   * tests/conftest.py sets the same value so a local pytest run boots
+#     without a .env file.
+#
+# Both are matched by value (not by path) so that a real secret committed to
+# either file still fails the scan. The rotated Supabase password that lives
+# in this repository's history is likewise not matched here — it is dead, and
+# allow-listing it by value would document the old credential in the repo.
+[allowlist]
+description = "CI and test-fixture placeholder secrets"
+regexes = [
+  '''ci-test-secret-key-0123456789-0123456789''',
+  '''test-secret-key-0123456789-0123456789''',
+]
