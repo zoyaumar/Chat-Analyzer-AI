@@ -27,7 +27,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://chat:chat@localhost:5432/chat_test
       SECRET_KEY: ci-test-secret-key-0123456789-0123456789
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -60,7 +60,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # gitleaks needs the full history, not the single-commit checkout,
           # or a secret introduced and deleted in one PR would slip through.
@@ -88,7 +88,7 @@ jobs:
       run:
         working-directory: chat_frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
