@@ -13,7 +13,7 @@
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
 
 **Status:** v0.2 — the core flows work end to end: auth, realtime chat, persistence and NLP
-analytics, containerised and test-covered (122 backend / 79 frontend tests). See
+analytics, containerised and test-covered (127 backend / 79 frontend tests). See
 [Milestones](#milestones--roadmap) for what is done and what comes next.
 
 ---
@@ -29,8 +29,7 @@ analytics, containerised and test-covered (122 backend / 79 frontend tests). See
 - [Definition of shippable](#definition-of-shippable)
 - [Environment variables](#environment-variables)
 - [Database & migrations](#database--migrations)
-- [API reference](#api-reference)
-- [WebSocket protocol](#websocket-protocol)
+- [API reference](#api-reference) — full reference in [`docs/api-reference.md`](docs/api-reference.md)
 - [Deployment](#deployment)
 - [Testing & code quality](#testing--code-quality)
 - [Milestones & roadmap](#milestones--roadmap)
@@ -53,8 +52,9 @@ The project is built around four ideas:
 2. **Analytics as a first-class feature.** Message text can be scored for sentiment and
    aggregated into a daily summary, so the chat is more than a CRUD demo — and analysis is
    persisted rather than recomputed on every click.
-3. **Realtime as a first-class transport.** A WebSocket channel carries new messages to
-   every connected client; REST remains the source of truth for history.
+3. **Realtime as a first-class transport.** A WebSocket channel persists and pushes new messages
+   to every open socket belonging to the message's author; REST remains the source of truth for
+   history.
 4. **A shippable monorepo.** `docker compose up` gives you database, API and web
    client, with migrations applied automatically and a test suite guarding the auth and
    ownership rules.
@@ -114,15 +114,18 @@ flowchart LR
 
     subgraph Compose["docker compose"]
         DB[("PostgreSQL 16")]
-        INF["inference - in-process today"]
+        WEB["nginx - serves the SPA, proxies API + /ws"]
     end
 
     ALEMBIC["Alembic migrations"]
+    INF["NLP inference - in-process inside the api container"]
 
     UI --> CL
     UI --> WSC
-    CL -- "same origin: /users, /messages, /analytics" --> API
-    WSC -- "same origin: /ws/chat, handshake auth" --> R_WS
+    CL -- "same origin: /users, /messages, /analytics" --> WEB
+    WSC -- "same origin: /ws/chat, handshake auth" --> WEB
+    WEB --> API
+    WEB --> R_WS
     R_USERS --> AUTH
     R_MSG --> AUTH
     R_ANA --> AUTH
@@ -167,7 +170,7 @@ Request flow in words:
 | Database | PostgreSQL 16 in Docker Compose, with a managed database optional for hosting | in use |
 | Migrations | Alembic as the only writer of DDL | in use (`create_all()` removed) |
 | Config | One `pydantic-settings` object reading `.env`, failing fast on missing secrets | in use |
-| NLP | Distilled summariser + sentiment, lazy-loaded, results persisted | in use |
+| NLP | Distilled summariser + sentiment, warmed at boot in Compose, results persisted | in use |
 | Packaging | `pyproject.toml` + a single pinned requirements file (`uv` optional) | in use |
 | Server | Uvicorn | in use |
 | Containers | Docker + Docker Compose (`db`, `api`, `web`) | in use |
@@ -272,9 +275,12 @@ Three services, one published port:
 
 The browser therefore talks to one origin and there is no CORS configuration to get wrong.
 
-> NLP inference runs inside the `api` container (models are lazy-loaded on first use). The
-> optional `inference` service — the same process split out, or a hosted API — remains an open
-> packaging decision; lazy loading, pinned models and persisted results are already settled.
+> NLP inference runs inside the `api` container, which holds both models in memory. Compose sets
+> `AI_WARMUP_ON_STARTUP=true` and mounts a named volume at `HF_HOME`, so weights are downloaded once
+> and loaded at container start rather than on the first user request; the model-backed `api` memory
+> limit is `2g` from a measured ~1.2 GB peak. Outside Compose the models load lazily on first use.
+> Splitting inference into its own container — or calling a hosted API — remains an open packaging
+> decision; pinned models, warmed loads and persisted results are already settled.
 
 ### Option B — run the two halves directly (no Docker)
 
@@ -360,7 +366,9 @@ run, trust and deploy. All of the following are true today:
 - [x] `pytest` covers auth, message ownership, `/users/me` and the analytics scoping rule,
       and passes in CI.
 - [x] `npm run lint && npm run build` pass in CI.
-- [x] The README describes exactly what the code does — no aspirational setup steps.
+- [x] Every setup command and curl example here has been run against this code, so a step that
+      fails is a step the tests would have caught. The claim is not that the README is exhaustive —
+      it is that nothing in it is aspirational. Anything unbuilt is labelled 🔨 or ⬜ above.
 
 ## Environment variables
 
@@ -372,7 +380,7 @@ run, trust and deploy. All of the following are true today:
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Access-token lifetime, read through the settings object. |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | no | `14` | Refresh-token lifetime in days — the rotating, revocable half of the session; renewed on every refresh. |
 | `REFRESH_COOKIE_SECURE` | no | `false` | Sets `Secure` on the refresh cookie; flip on behind TLS, off for plain-HTTP local dev. `HttpOnly` and `SameSite=Strict` are unconditional. |
-| `DEBUG` | no | `false` | Sets the JSON log level to DEBUG; it does not expose the removed `/test-db` route. |
+| `DEBUG` | no | `false` | Sets the JSON log level to DEBUG, which is otherwise the quietest useful setting. |
 | `DB_POOL_SIZE` | no | `5` | Base async SQLAlchemy pool size. |
 | `DB_MAX_OVERFLOW` | no | `10` | Connections allowed beyond `DB_POOL_SIZE` before the pool blocks. |
 | `DB_POOL_TIMEOUT` | no | `30` | Seconds to wait for a pooled connection before failing. |
@@ -417,18 +425,38 @@ SECRET_KEY=replace-with-a-long-random-string
 
 ## Database & migrations
 
-Two tables, declared in `chat_backend/models.py`:
+Four tables, declared in `chat_backend/models.py`:
 
 ```
-users                          messages
-─────                          ────────
-id            int PK           id         int PK
-username      varchar UNIQUE   user_id    int FK -> users.id (not null)
-password_hash varchar          text       varchar (not null)
-                               timestamp  timestamptz default now()
+users                            messages
+─────                            ────────
+id            int PK             id         int PK
+username      varchar UNIQUE     user_id    int FK -> users.id (not null, ON DELETE CASCADE)
+password_hash varchar            text       varchar(4000) (not null)
+created_at    timestamptz        timestamp  timestamptz default now()
+updated_at    timestamptz                  updated_at timestamptz
+              (nullable)
+
+message_sentiment                refresh_tokens
+─────────────────                ──────────────
+message_id  int PK ->            id          int PK
+             messages.id        token_hash  varchar(64) UNIQUE
+             (ON DELETE CASCADE) user_id     int FK -> users.id (not null,
+label       varchar(32)                      ON DELETE CASCADE)
+score       float                created_at  timestamptz default now()
+model_name  varchar(255)         expires_at  timestamptz
+model_version varchar(64)
+created_at  timestamptz
 ```
 
-`users 1 ──< messages` (SQLAlchemy `relationship(back_populates=...)`).
+```
+users 1 ──< messages 1 ──1 message_sentiment
+users 1 ──< refresh_tokens
+```
+
+`message_sentiment` shares its primary key with `messages.id`, so a message has at most one score.
+Every foreign key cascades, which is what makes `DELETE /users/me` a single statement: the messages
+go, the scores that hang off those messages go with them, and the account's sessions go too.
 
 ```bash
 alembic upgrade head                              # apply the schema
@@ -439,15 +467,15 @@ alembic revision --autogenerate -m "add x"        # after changing models.py
 `06c1b9c7b0ec` is a true `op.create_table(...)` initial migration, application startup does not
 call `create_all()` (the test-only schema fixture may), and `alembic upgrade head` succeeds
 against an empty database — verified against a fresh PostgreSQL 16 container, which is also what
-the test suite runs on.
+the test suite runs on. A database created by an older build, before the initial migration was
+authored, needs `alembic stamp head` once instead.
 
-> **Note for the existing development database.** Because that database already had the
-> tables (from the old `create_all()` era), stamp it once instead of upgrading:
-> `alembic stamp head`. Fresh databases just need `alembic upgrade head`.
-
-Indexes on `user_id`, `timestamp`, and `(user_id, timestamp DESC)` are applied in migration
-`1a2b3c4d5e6f`; `Message.text` is capped at 4000 characters and user deletion cascades in
-`f4e5d6c7b8a9`; row timestamps and persisted sentiment live in `b7c8d9e0f1a2`.
+Six revisions, in order: `06c1b9c7b0ec` creates `users` and `messages`;
+`1a2b3c4d5e6f` adds the indexes on `user_id`, `timestamp` and `(user_id, timestamp DESC)`;
+`f4e5d6c7b8a9` caps `Message.text` at 4000 characters and adds `ON DELETE CASCADE` to the
+message/user foreign key; `b7c8d9e0f1a2` adds the `created_at`/`updated_at` columns and the
+`message_sentiment` table; `c8d9e0f1a2b3` drops a unique constraint on `users.username` that
+duplicated the one its index already provided; `d3f7a1c9e2b4` creates `refresh_tokens`.
 
 ## API reference
 
@@ -456,188 +484,31 @@ use `http://127.0.0.1:8000` for the manual setup. Authenticated endpoints expect
 `Authorization: Bearer <access_token>`. Browse the generated schema at `/docs` (Swagger UI),
 `/redoc`, or `/openapi.json`.
 
-### Users
+| Group | Routes | Auth |
+| --- | --- | --- |
+| Users | `POST /users/register`, `POST /users/login`, `POST /users/refresh`, `POST /users/logout`, `GET /users/me`, `GET /users/{user_id}`, `DELETE /users/me` | bearer, refresh cookie, or none |
+| Messages | `POST /messages/`, `GET /messages/` (keyset-paginated), `DELETE /messages/{message_id}` | bearer |
+| Analytics | `POST /analytics/sentiment`, `GET /analytics/daily`, `GET /analytics/sentiment/timeline` | bearer |
+| Realtime | `WS /ws/chat` — first-frame JWT, per-author fan-out | first frame |
+| Utility | `GET /`, `GET /health`, `GET /health/ready` | none |
 
-| Method | Path | Auth | Request | Response |
-| --- | --- | --- | --- | --- |
-| `POST` | `/users/register` | – | JSON `{ "username": str, "password": str }` | `{ "id": int, "username": str, "created_at": str }` — `422` if the policy fails, `429` if the address is over its budget |
-| `POST` | `/users/login` | – | `application/x-www-form-urlencoded` with `username`, `password` | `{ "access_token": str, "token_type": "bearer" }` |
-| `GET` | `/users/me` | Bearer | – | `{ "id": int, "username": str, "created_at": str }` |
-| `GET` | `/users/{user_id}` | Bearer | – | Same profile shape; used to name message authors |
-| `DELETE` | `/users/me` | Bearer | – | `{ "detail": "Account deleted" }` — cascades the user's messages and sessions |
+**Full request and response shapes, curl examples, failure modes and the WebSocket frame
+reference live in [`docs/api-reference.md`](docs/api-reference.md).**
 
-<details>
-<summary>Register</summary>
+A few things worth knowing without opening that:
 
-```bash
-curl -X POST http://127.0.0.1:8000/users/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "alice", "password": "s3cret-pw"}'
-# -> {"id": 1, "username": "alice", "created_at": "2026-02-11T09:14:02.881Z"}
-```
-
-Failure modes: `400 Username already registered`; `422` when the credential policy rejects the
-input — `username` 3–32 characters of `[A-Za-z0-9._-]`, `password` at least 8 characters and at most
-72 bytes (bcrypt hashes no more than that — the pre-`pwdlib` `passlib` stack truncated the rest
-silently, and `bcrypt >= 4.1` now refuses longer input, which the login route answers as a `401`); `429 Too
-many attempts` with a `Retry-After` header once this address has spent its registration budget
-(five per hour by default).
-</details>
-
-<details>
-<summary>Login</summary>
-
-```bash
-curl -X POST http://127.0.0.1:8000/users/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=alice&password=s3cret-pw"
-# -> {"access_token": "eyJhbGciOi...", "token_type": "bearer"}
-```
-
-Failure modes: `401 Invalid username or password` when the credentials are wrong or the account does
-not exist; `429 Too many attempts` with a `Retry-After` header once this address has spent its login
-budget (ten per five minutes by default). Every attempt spends budget, so a password guesser
-runs out — and so does a user who mistypes ten times, which is the trade-off that makes the limit
-worth having.
-
-The JWT payload is `{ "sub": "<user_id>", "exp": <unix ts>, "iat": <unix ts>, "jti": "<hex>" }`.
-Refresh tokens are tracked server-side (rotating, hashed, revocable), so logout invalidates a
-session even while an access token is still valid; `jti` distinguishes sessions of the same user.
-</details>
-
-
-### Messages
-
-| Method | Path | Auth | Request | Response |
-| --- | --- | --- | --- | --- |
-| `POST` | `/messages/` | Bearer | JSON `{ "text": str }` — the sender comes from the token | `Message` |
-| `GET` | `/messages/` | Bearer | query `limit=1..100`, optional `before` + `before_id` cursor | `[Message]` |
-| `DELETE` | `/messages/{message_id}` | Bearer | – | `{ "detail": "Message deleted" }` |
-
-`Message` payload:
-
-```json
-{ "id": 12, "user_id": 1, "text": "hello world", "timestamp": "2026-02-11T18:03:41.991233+00:00" }
-```
-
-<details>
-<summary>Send and list</summary>
-
-```bash
-TOKEN=$(curl -s -X POST http://127.0.0.1:8000/users/login \
-  -d "username=alice&password=s3cret" | jq -r .access_token)
-
-curl -X POST http://127.0.0.1:8000/messages/ \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"text": "first message"}'
-
-curl "http://127.0.0.1:8000/messages/" -H "Authorization: Bearer $TOKEN"
-```
-
-Failure modes: `401` when the token is missing/expired; `404 Message not found or not yours`
-when deleting someone else's message.
-</details>
-
-The current message API is protected and user-scoped. It supports bounded keyset pagination
-(`before` + `before_id`) with a **Load older messages** control, merges REST and socket results
-by `id`, and lets an owner delete their own message from the feed. The routes declare
-response models (`MessageOut`), so the contract appears in OpenAPI, and the client never sends
-a `user_id` that the API ignores.
-
-### Analytics
-
-| Method | Path | Auth | Request | Response |
-| --- | --- | --- | --- | --- |
-| `POST` | `/analytics/sentiment` | Bearer | JSON body `{ "text": "..." }` (max 4,000 characters) | `{ "label": "POSITIVE"\|"NEGATIVE", "score": float }` |
-| `GET` | `/analytics/daily` | Bearer | – | `{ "date": "YYYY-MM-DD", "summary": str }` |
-| `GET` | `/analytics/sentiment/timeline` | Bearer | query `days=1..365` (default 30) | `{ "days": int, "timeline": [{ "date", "messages", "positive", "negative", "avg_score" }] }` |
-
-```bash
-curl -X POST "http://127.0.0.1:8000/analytics/sentiment" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"text":"I love this"}'
-# -> {"label": "POSITIVE", "score": 0.9998}
-
-curl http://127.0.0.1:8000/analytics/daily -H "Authorization: Bearer $TOKEN"
-# -> {"date": "2026-02-11", "summary": "..."}
-
-curl "http://127.0.0.1:8000/analytics/sentiment/timeline?days=7" -H "Authorization: Bearer $TOKEN"
-# -> {"days": 7, "timeline": [{"date": "2026-02-10", "messages": 4, "positive": 3, "negative": 1, "avg_score": 0.82}]}
-```
-
-Current analytics behavior:
-
-- Every message is scored once, at write time, in the same transaction, and the result is
-  stored in `message_sentiment` with the model name and pinned revision that produced it.
-  Reads (the timeline) never run inference; a scoring failure costs the score,
-  never the message.
-- `/analytics/sentiment` stays an ad-hoc endpoint for arbitrary text: `@lru_cache` answers
-  repeats, the input is capped at 4,000 characters, and the model is asked with
-  `truncation=True`, so a long input degrades instead of raising.
-- `/analytics/daily` is scoped to the authenticated user and summarises a half-open UTC day
-  window; the transcript is chunked and summarised map-reduce style, so a busy day cannot
-  exceed the model's token limit.
-- Both model-backed endpoints answer `503` with the reason when a model cannot load; chat,
-  message history and deletion are unaffected. `GET /health/ready` reports each capability as
-  `ready`, `failed` or `not_loaded`.
-
-### Utility
-
-| Method | Path | Auth | Response |
-| --- | --- | --- | --- |
-| `GET` | `/` | – | `{ "message": "Welcome to Chat Analyzer API with AI!" }` |
-| `GET` | `/health` | – | `{ "status": "ok" }` |
-| `GET` | `/health/ready` | – | `{ "status": "ok", "database": "up", "model_state": { "sentiment": "ready\|failed\|not_loaded", "summary": … } }` or `503` when the database is unavailable |
-
-`/health` and `/health/ready` are the supported liveness/readiness probes; the old public
-`/test-db` diagnostic has been removed.
-
-## WebSocket protocol
-
-| Item | Value |
-| --- | --- |
-| Endpoint | `WS /ws/chat` (same origin — the Vite dev proxy forwards `/ws`) |
-| Auth | first frame: `{"type": "auth", "token": "<jwt>"}` (RFC 6455 1008 if invalid/timed out) |
-| Client → server | `{"type": "message", "text": "...", "client_id": "..."}` or `{"type": "ping"}` |
-| Server → user sockets | `{"type": "message", "message": <MessageOut>, "client_id": "..."}`, `{"type": "message_deleted", "message_id": <id>, "user_id": <user_id>}`, `{"type": "pong"}` |
-
-```ts
-// chat_frontend/src/realtime/useChatSocket.ts
-const { status, send } = useChatSocket({
-  token,
-  userId,
-  onMessage: appendSocketMessage,
-  onMessageDeleted: removeSocketMessage,
-  sendOverHttp: (text) => sendOverHttp.mutateAsync(text),
-});
-```
-
-Where it stands today, stated plainly:
-
-- ✅ The handshake validates the JWT via first-frame auth — invalid/missing tokens receive close code 1008.
-- ✅ Realtime wire protocol is typed and defensive (`parseFrame` drops unknown or non-object payloads).
-- ✅ Messages sent over WebSocket persist into PostgreSQL via `crud.create_message` and broadcast to all active connections for that user with `client_id` echoed for sender reconciliation.
-- ✅ Deletion broadcasts (`message_deleted`) update loaded cache feeds across active tabs idempotently.
-- ✅ Reconnection with exponential backoff, ping/pong keepalive (25s interval, 10s timeout), and fallback to REST when disconnected or refused.
-
-Protocol details:
-
-```jsonc
-// client -> server (handshake)
-{ "type": "auth", "token": "<jwt>" }
-
-// server -> client (ack)
-{ "type": "auth_ok", "user_id": 1 }
-
-// client -> server (send)
-{ "type": "message", "text": "hello", "client_id": "c1" }
-
-// server -> author's connected sockets
-{ "type": "message", "message": { "id": 13, "user_id": 1, "text": "hello", "timestamp": "2026-02-11T18:03:41Z" }, "client_id": "c1" }
-
-// server -> author's connected sockets on deletion (HTTP or WS)
-{ "type": "message_deleted", "message_id": 13, "user_id": 1 }
-```
+- Sessions are two credentials. Login returns a short-lived access token in the body (the SPA keeps
+  it **in memory only**) and a rotating refresh token in an `HttpOnly; SameSite=Strict; Path=/users`
+  cookie. `/users/refresh` spends and replaces the cookie; `/users/logout` revokes it server-side.
+- The refresh endpoints take the *cookie* as their credential, which is why they also require a
+  same-origin request — a cross-site `Origin` is refused (`403`).
+- Every read is scoped to the caller. `GET /messages/` returns only your messages, `/analytics/daily`
+  only your transcript, and deleting someone else's message is `404`, not `403`.
+- Passwords are 3–32 character usernames and 8–72 byte passwords, and login/register are rate
+  limited per client address (`429` + `Retry-After`).
+- Analytics is a lookup, not a recompute: each message is scored once at write time, so the
+  timeline runs no inference. If a model cannot load, those endpoints answer `503` and chat is
+  unaffected.
 
 ## Deployment
 
@@ -675,7 +546,7 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 122 passing, 2 skipped (the opt-in model evaluation; needs a Postgres, see below) |
+| Backend tests | `py -m pytest` | ✅ 127 passing, 2 skipped (the opt-in model evaluation, see below); needs a PostgreSQL, see below |
 | Migrations against an empty database | `alembic upgrade head` + `alembic downgrade base` | ✅ verified on PostgreSQL 16, both directions |
 | Models vs migrations | `alembic check` | ✅ no drift |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |

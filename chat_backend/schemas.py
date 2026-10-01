@@ -14,11 +14,13 @@ USERNAME_PATTERN = r"^[A-Za-z0-9._-]+$"
 PASSWORD_MIN_LENGTH = 8
 # bcrypt is no longer the hasher that *writes* passwords — argon2id is (gap S10)
 # — but it still has to *verify* every password registered before the migration,
-# and bcrypt >= 4.1 refuses input over 72 bytes with a `ValueError` instead of
-# truncating it. Keeping registration inside that limit means both hashers accept
-# exactly the same credentials: a long password would be unverifiable rather than
-# merely collision-prone. It also bounds the cost of hashing attacker-sized input.
-# A byte cap, not a character cap — 20 emoji are already 80 bytes (gap S6).
+# and bcrypt 5.0.0 raises `ValueError` on input over 72 bytes instead of truncating
+# it. Keeping registration inside that limit means both hashers accept exactly the
+# same credentials: a long password would be unverifiable rather than merely
+# collision-prone (the old `passlib` stack truncated silently, so `"x" * 80` and
+# `"x" * 72 + "yyyy"` were the same credential). It also bounds the cost of hashing
+# attacker-sized input. A byte cap, not a character cap — 20 emoji are already
+# 80 bytes (gap S6).
 PASSWORD_MAX_BYTES = 72
 
 
@@ -48,11 +50,10 @@ class UserCreate(UserBase):
     @field_validator("password")
     @classmethod
     def _password_fits_bcrypt(cls, value: str) -> str:
-        """Refuse a password the hasher would silently cut short (gap S6)."""
+        """Refuse a password the legacy hasher could not accept (gap S6)."""
         if len(value.encode("utf-8")) > PASSWORD_MAX_BYTES:
             raise ValueError(
                 f"Password must be at most {PASSWORD_MAX_BYTES} bytes"
-                " (bcrypt hashes no more than that)"
             )
         return value
 

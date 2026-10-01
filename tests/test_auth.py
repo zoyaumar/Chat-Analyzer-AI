@@ -226,7 +226,7 @@ async def test_a_new_account_is_hashed_with_argon2(client: AsyncClient, db_sessi
 async def test_a_password_the_legacy_hasher_refuses_is_a_401_not_a_500(
     client: AsyncClient, db_session
 ):
-    """bcrypt >= 4.1 raises `ValueError` past 72 bytes instead of truncating.
+    """bcrypt 5.0.0 raises `ValueError` past 72 bytes instead of truncating.
 
     The registration policy (S6) keeps new passwords inside that limit, so the
     only way to reach this is a hash written *before* the policy existed — and

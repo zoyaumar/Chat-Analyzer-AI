@@ -45,7 +45,7 @@ def verify_and_rehash(
     what is stored is already current — that is the whole rehash-on-login path.
 
     Two failures are deliberately *not* an exception to the caller: bcrypt
-    refuses input over its 72-byte limit outright (`ValueError`, bcrypt >= 4.1
+    refuses input over its 72-byte limit outright (`ValueError`; bcrypt 5.0.0
     raises instead of truncating) and a stored hash may name a hasher this
     install does not have (`UnknownHashError`). Neither is a usable credential,
     and on a login route neither may become a `500`.
