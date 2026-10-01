@@ -3,7 +3,7 @@ import { render, type RenderResult } from "@testing-library/react";
 import type { ReactElement } from "react";
 
 /**
- * Test client for the TanStack Query migration (gap F16): no retries, so a
+ * Test client for the TanStack Query migration: no retries, so a
  * failing call surfaces immediately, and no cross-test cache because every
  * `renderWithQueryClient` call gets a fresh client.
  */

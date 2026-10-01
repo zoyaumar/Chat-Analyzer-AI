@@ -1,4 +1,4 @@
-"""The single-process pin, and the guard that says so out loud (gap N5).
+"""The single-process pin, and the guard that says so out loud.
 
 Three things in this application are per-process by construction, not by
 accident: the loaded model weights (`ai_utils._PIPELINES`), the rate-limit
@@ -33,7 +33,7 @@ _WORKER_ENV_VARS = ("WEB_CONCURRENCY", "UVICORN_WORKERS", "WORKERS")
 #: Written in the startup log so an operator reading only the logs can tell a
 #: deliberate single-process deployment from an accidental one.
 SINGLE_PROCESS_NOTICE = (
-    "single-process by design (gap N5): model weights, rate limits and the "
+    "single-process by design: model weights, rate limits and the "
     "WebSocket registry are per-process"
 )
 
@@ -95,7 +95,7 @@ def warn_if_multi_process(environ: dict[str, str] | None = None) -> int:
             "logged. Run one worker (uvicorn --workers 1, WEB_CONCURRENCY=1, or "
             "replicas: 1) and resolve rolling-update overlap with "
             "strategy: Recreate or maxSurge: 0. To scale out properly, introduce "
-            "a shared store for fan-out and rate limits (gap P17). "
+            "a shared store for fan-out and rate limits. "
             "See docs/scaling.md.",
             count,
             SINGLE_PROCESS_NOTICE,

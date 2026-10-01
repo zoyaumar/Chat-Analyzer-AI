@@ -44,7 +44,7 @@ async def setup_schema():
 
     `drop_all` first: `create_all` alone silently keeps a stale schema when
     the models change, which is exactly how a missing `ON DELETE CASCADE`
-    would go unnoticed (gaps D4/D6).
+    would go unnoticed.
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -65,7 +65,7 @@ async def clean_tables(setup_schema):
 
 @pytest.fixture(autouse=True)
 def reset_rate_limits():
-    """Every test starts and ends with empty limiter buckets (gap S6).
+    """Every test starts and ends with empty limiter buckets.
 
     The limiters are process-wide and the suite logs in far more often than one
     window allows from one address, so without this the credential tests would
@@ -81,16 +81,16 @@ def reset_rate_limits():
 
 @pytest.fixture(autouse=True)
 def fake_ai(monkeypatch):
-    """No test ever loads a model (gaps A4/A6/T5).
+    """No test ever loads a model.
 
-    `crud.create_message` scores at write time (A4), so without this every
+    `crud.create_message` scores at write time, so without this every
     message test would download DistilBERT on its first send. The fakes replace
     the public names in `ai_utils` *and* in `routes.analytics` (which imports
     them by name — patching only the module would leave the route pointing at
     the real pipeline); a test that patches either name itself still wins.
 
     Reproducible provenance on purpose: assertions can expect exactly these
-    values in `message_sentiment` (gap A7).
+    values in `message_sentiment`.
     """
     from chat_backend import ai_utils
     from chat_backend.routes import analytics
@@ -113,7 +113,7 @@ def fake_ai(monkeypatch):
 
 @pytest.fixture
 def real_ai(monkeypatch):
-    """Undo `fake_ai` for a test that really wants the model (gap A7).
+    """Undo `fake_ai` for a test that really wants the model.
 
     Only `tests/test_ai_eval.py` opts in, and only behind `RUN_AI_EVAL=1`.
     """
@@ -177,7 +177,7 @@ def ws_client(monkeypatch):
 async def user_and_token(client: AsyncClient):
     """Register + login a user; return (username, password, token).
 
-    The password satisfies the credential policy (gap S6): at least 8
+    The password satisfies the credential policy: at least 8
     characters, at most 72 bytes.
     """
     username = "alice"

@@ -1,7 +1,7 @@
-"""`GET /analytics/sentiment/timeline` — sentiment over time (gap A3).
+"""`GET /analytics/sentiment/timeline` — sentiment over time.
 
-A read-only aggregate over the stored scores (gap A4), grouped by UTC day (D7)
-and scoped to the caller (S3).
+A read-only aggregate over the stored scores, grouped by UTC day
+and scoped to the caller.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -41,7 +41,7 @@ async def test_timeline_aggregates_by_utc_day_and_only_for_the_caller(
         [
             models.Message(id=1, user_id=user_id, text="positive", timestamp=now),
             models.Message(id=2, user_id=user_id, text="negative", timestamp=now),
-            # Never scored (the model was down, gap A6): counted, not averaged.
+            # Never scored (the model was down): counted, not averaged.
             models.Message(id=3, user_id=user_id, text="unscored", timestamp=now),
             models.Message(id=4, user_id=user_id, text="older", timestamp=older_day),
             models.Message(id=5, user_id=other.id, text="not mine", timestamp=now),

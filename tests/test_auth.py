@@ -53,7 +53,7 @@ async def test_users_me_requires_token(client: AsyncClient):
     assert resp.status_code == 401
 
 
-# --- Credential policy (gap S6) -------------------------------------------
+# --- Credential policy ----------------------------------------------------
 # Registration used to accept a one-character username and any password at all.
 # Each of these is a `422` naming the field that failed, so a client can show a
 # useful message instead of a generic failure.
@@ -129,7 +129,7 @@ async def test_the_policy_does_not_apply_to_login(client: AsyncClient):
 
 
 async def test_an_account_that_predates_the_policy_still_serialises(client, db_session):
-    """The bounds sit on `UserCreate`, never on `UserOut` (gap S6).
+    """The bounds sit on `UserCreate`, never on `UserOut`.
 
     A one-character name is no longer registrable, but it may already exist, and
     reading it must not become a 500 because a response model tightened after
@@ -148,7 +148,7 @@ async def test_an_account_that_predates_the_policy_still_serialises(client, db_s
     assert response.json()["username"] == "a"
 
 
-# --- Password hashing (gap S10) ---------------------------------------------
+# --- Password hashing -------------------------------------------------------
 # `passlib` (last released 2020) is replaced by `pwdlib`: argon2id writes every
 # new hash and bcrypt stays in the hasher list only so accounts written before
 # the migration still open. The tests below are the proof the migration
@@ -157,7 +157,7 @@ async def test_an_account_that_predates_the_policy_still_serialises(client, db_s
 
 
 def _bcrypt_hash(password: str) -> str:
-    """A hash exactly as the pre-S10 app wrote one (passlib over bcrypt)."""
+    """A hash as the app wrote one before argon2 (passlib over bcrypt)."""
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 
 
@@ -207,7 +207,7 @@ async def test_the_login_that_proves_an_old_hash_rewrites_it(
 
 
 async def test_a_new_account_is_hashed_with_argon2(client: AsyncClient, db_session):
-    """Registration never writes bcrypt again (gap S10, decided in Q6)."""
+    """Registration never writes bcrypt again."""
     assert (
         await client.post(
             "/users/register", json={"username": "newbie", "password": "pw123456"}
@@ -228,7 +228,7 @@ async def test_a_password_the_legacy_hasher_refuses_is_a_401_not_a_500(
 ):
     """bcrypt 5.0.0 raises `ValueError` past 72 bytes instead of truncating.
 
-    The registration policy (S6) keeps new passwords inside that limit, so the
+    The registration policy keeps new passwords inside that limit, so the
     only way to reach this is a hash written *before* the policy existed — and
     an unusable credential must still be a `401`, never a crash in the route.
     """
@@ -257,7 +257,7 @@ async def test_an_unreadable_stored_hash_is_a_401_not_a_500(
     assert response.status_code == 401
 
 
-# --- Refresh tokens, logout & the origin guard (gaps S7/S9, Q5/Q9) ---------
+# --- Refresh tokens, logout & the origin guard -----------------------------
 # The session is now two halves: a short-lived access token in the body (held
 # in memory by the SPA) and a rotating refresh token in an HttpOnly cookie,
 # stored hashed in `refresh_tokens` so it can be revoked server-side.
@@ -282,7 +282,7 @@ async def _login(client: AsyncClient, username: str, password: str):
 async def test_login_sets_an_httponly_strict_refresh_cookie(
     client: AsyncClient, user_and_token
 ):
-    """The session cookie is invisible to JS and unusable cross-site (gap S9)."""
+    """The session cookie is invisible to JS and unusable cross-site."""
     username, password, _ = user_and_token
 
     response = await _login(client, username, password)
@@ -293,13 +293,13 @@ async def test_login_sets_an_httponly_strict_refresh_cookie(
     assert "path=/users" in cookie
     assert "max-age=" in cookie
     # Not `Secure` by default: a browser would drop it over the plain HTTP
-    # every local deployment runs on (REFRESH_COOKIE_SECURE flips it, S9/Q5).
+    # every local deployment runs on (`REFRESH_COOKIE_SECURE` flips it).
     attributes = [part.strip().lower() for part in _refresh_cookie_header(response).split(";")]
     assert "secure" not in attributes
 
 
 async def test_access_tokens_carry_iat_and_jti(client: AsyncClient, user_and_token):
-    """`iat`/`jti` land now so revocation never needs another format change (Q8/S7)."""
+    """`iat`/`jti` land now so revocation never needs another format change."""
     import jwt
 
     from chat_backend.config import settings
@@ -324,7 +324,7 @@ async def test_access_tokens_carry_iat_and_jti(client: AsyncClient, user_and_tok
 async def test_refresh_rotates_the_token_and_mints_a_usable_access_token(
     client: AsyncClient, user_and_token
 ):
-    """One refresh, one new cookie, one new access token — and the old one dies (S7)."""
+    """One refresh, one new cookie, one new access token — and the old one dies."""
     await _login(client, "alice", "s3cret-pw")
     spent = client.cookies.get("refresh_token")
     assert spent
@@ -354,7 +354,7 @@ async def test_refresh_without_a_cookie_is_401(client: AsyncClient):
 async def test_logout_revokes_the_session_server_side(
     client: AsyncClient, user_and_token
 ):
-    """Logout deletes the row — the browser copy alone was never enough (gap S7)."""
+    """Logout deletes the row — the browser copy alone was never enough."""
     await _login(client, "alice", "s3cret-pw")
 
     response = await client.post("/users/logout")
@@ -407,7 +407,7 @@ async def test_an_expired_refresh_token_is_purged_not_accepted(
 
 
 async def test_cookie_endpoints_reject_cross_site_requests(client: AsyncClient):
-    """CSRF layer two: `Sec-Fetch-Site`/`Origin` must say same-origin (gap S9).
+    """CSRF layer two: `Sec-Fetch-Site`/`Origin` must say same-origin.
 
     `SameSite=Strict` already stops the browser sending the cookie cross-site;
     this guard rejects the request itself, so the answer is a `403` either way.

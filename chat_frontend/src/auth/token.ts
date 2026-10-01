@@ -1,12 +1,12 @@
 import { jwtDecode } from "jwt-decode";
 
 /**
- * The access token lives **in memory only** (gaps S7/S9, Q5/Q9).
+ * The access token lives **in memory only**.
  *
  * Nothing JavaScript-readable survives a reload: the durable half of the
  * session is a refresh token in an `HttpOnly` cookie the DOM never sees, and
  * `AuthProvider` trades it for a fresh access token on boot. The legacy
- * `localStorage` key — the storage gap S9 — is read once, adopted if still
+ * `localStorage` key — the old storage — is read once, adopted if still
  * valid, and deleted either way, so an already-signed-in browser migrates off
  * the XSS-readable copy on its first visit after this ships.
  */
@@ -60,9 +60,9 @@ export function clearAccessToken(): void {
 }
 
 /**
- * Adopt the pre-S9 `localStorage` token — if it still qualifies — and remove
+ * Adopt the legacy `localStorage` token — if it still qualifies — and remove
  * the stored copy in every case. Moving it out of `localStorage` is the whole
- * point (gap S9); keeping an expired one around would only preserve the leak.
+ * point; keeping an expired one around would only preserve the leak.
  */
 export function takeLegacyToken(): string | null {
   const stored = localStorage.getItem(LEGACY_TOKEN_KEY);

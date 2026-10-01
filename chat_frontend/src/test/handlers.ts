@@ -1,5 +1,5 @@
 /**
- * MSW handlers mirroring the REST surface (gap T5).
+ * MSW handlers mirroring the REST surface.
  *
  * Page-level tests drive the real `apiClient` + TanStack Query stack against
  * these instead of `vi.mock`-ing `../api`, so query-string mapping, the bearer
@@ -22,9 +22,9 @@ export const mswState = {
   messages: [] as Message[],
   /** Every feed request the handler saw, oldest first. */
   feedRequests: [] as RecordedFeedRequest[],
-  /** Every user id the feed asked a name for (gap F10), oldest first. */
+  /** Every user id the feed asked a name for, oldest first. */
   profileRequests: [] as number[],
-  /** Timeline days the trend chart asked for (gap P12), oldest first. */
+  /** Timeline days the trend chart asked for, oldest first. */
   timelineRequests: [] as number[],
   /** What `GET /analytics/sentiment/timeline` answers with. */
   timeline: [] as SentimentTimelineEntry[],
@@ -42,7 +42,7 @@ export function resetMswState(messages: Message[] = []): void {
   nextId = Math.max(0, ...messages.map((m) => m.id)) + 1;
 }
 
-/** A timeline day for the trend chart fixture (gap P12). */
+/** A timeline day for the trend chart fixture. */
 export function mswTimelineEntry(
   date: string,
   messages: number,
@@ -68,11 +68,11 @@ export function mswMessage(
   };
 }
 
-/** Usernames the profile endpoint knows; anything else is a 404 (gap F10). */
+/** Usernames the profile endpoint knows; anything else is a 404. */
 const knownUsernames: Record<number, string> = { 1: "alice", 2: "bob" };
 
 export const handlers = [
-  // Keyset pagination (B10): newest `limit` without a cursor, the page older
+  // Keyset pagination: newest `limit` without a cursor, the page older
   // than `before_id` with one — ascending, like the API.
   http.get("/messages/", ({ request }) => {
     const url = new URL(request.url);
@@ -110,7 +110,7 @@ export const handlers = [
 
   http.get("/users/me", () => HttpResponse.json({ id: 1, username: "alice" })),
 
-  // Attribution (gap F10): a profile per author id, 404 for anyone unknown.
+  // Attribution: a profile per author id, 404 for anyone unknown.
   http.get("/users/:id", ({ params }) => {
     const id = Number(params.id);
     mswState.profileRequests.push(id);
@@ -129,7 +129,7 @@ export const handlers = [
     HttpResponse.json({ access_token: "msw-token", token_type: "bearer" })
   ),
 
-  // The refresh cookie flow (gaps S7/S9): renewal and revocation endpoints the
+  // The refresh cookie flow: renewal and revocation endpoints the
   // auth context boot and logout talk to.
   http.post("/users/refresh", () =>
     HttpResponse.json({ access_token: "msw-refreshed-token", token_type: "bearer" })
@@ -147,7 +147,7 @@ export const handlers = [
     HttpResponse.json({ date: "2026-09-25", summary: "Today was positive." })
   ),
 
-  // The trend chart (gaps A3/P12). `timelineRequests` records the `days` each
+  // The trend chart. `timelineRequests` records the `days` each
   // call asked for, so a test can prove the window selector reaches the wire.
   http.get("/analytics/sentiment/timeline", ({ request }) => {
     const days = Number(new URL(request.url).searchParams.get("days") ?? "30");

@@ -1,4 +1,4 @@
-"""Security headers on every API response (gap S11)."""
+"""Security headers on every API response."""
 from httpx import AsyncClient
 
 

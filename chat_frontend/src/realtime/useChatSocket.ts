@@ -1,5 +1,5 @@
 /**
- * The client end of `/ws/chat` (gaps S8, B1, B2, B4, F11).
+ * The client end of `/ws/chat`.
  *
  * `react-use-websocket` owns the socket lifecycle and reconnection; this hook owns
  * the **protocol**: it authenticates with the first frame, keeps liveness honest,
@@ -28,7 +28,7 @@ import {
 
 /** How often an authenticated socket is asked to prove it is still alive. */
 export const PING_INTERVAL_MS = 25_000;
-/** How long a ping may stay unanswered before the socket counts as dead (B2). */
+/** How long a ping may stay unanswered before the socket counts as dead. */
 export const PONG_TIMEOUT_MS = 10_000;
 /** How long the server may take to echo back a message we sent. */
 export const ECHO_TIMEOUT_MS = 10_000;
@@ -38,8 +38,8 @@ const RECONNECT_ATTEMPTS = 10;
 
 /**
  * Closes that are final, so the library must not reconnect after them:
- * a refused handshake (gap B4) and a socket that authenticated as somebody else
- * — both would fail identically forever, and HTTP is the way back in (F11).
+ * a refused handshake and a socket that authenticated as somebody else
+ * — both would fail identically forever, and HTTP is the way back in.
  */
 const NO_RETRY_CLOSE_CODES = new Set([POLICY_VIOLATION, SESSION_MISMATCH]);
 
@@ -109,7 +109,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
 
   // Socket handlers are installed once per connection, so the values they need
   // live in refs: the auth frame reads the token that is current when it opens,
-  // not the one captured at mount (gap B5), and callbacks stay fresh without
+  // not the one captured at mount, and callbacks stay fresh without
   // tearing the connection down.
   const tokenRef = useRef(token);
   const userIdRef = useRef(userId);
@@ -174,7 +174,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
         case "message": {
           onMessageRef.current(frame.message);
           // Our own message, once the server has stored it — the confirmation that
-          // makes a socket send as trustworthy as the REST response (gap F11).
+          // makes a socket send as trustworthy as the REST response.
           if (frame.client_id) settleSend(frame.client_id);
           return;
         }
@@ -182,7 +182,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
           onMessageDeletedRef.current(frame.message_id);
           return;
         case "pong":
-          // The only proof of liveness that counts (gap B2).
+          // The only proof of liveness that counts.
           pingSentAtRef.current = null;
           return;
         case "error":
@@ -196,7 +196,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
   const handleMessage = useCallback(
     (event: MessageEvent) => {
       const frame = parseFrame(event.data);
-      // Anything that is not our protocol is ignored, never trusted (gap F3).
+      // Anything that is not our protocol is ignored, never trusted.
       if (frame) handleFrame(frame);
     },
     [handleFrame]
@@ -207,7 +207,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
       forgetSession();
       if (event.code === POLICY_VIOLATION) {
         // The handshake was refused (expired or unknown token): retrying would
-        // fail identically, so stop and let HTTP report the 401 (gap B4).
+        // fail identically, so stop and let HTTP report the 401.
         setRefused(true);
       }
       failPendingSends(new SocketClosed());
@@ -217,14 +217,14 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
 
   const { sendJsonMessage, readyState, getWebSocket } = useWebSocket(
     // Signed out means no socket at all. A token refresh does not change this
-    // URL, because the token is never part of it (gaps S8/B5).
+    // URL, because the token is never part of it.
     token && userId !== null ? chatSocketUrl() : null,
     {
       onMessage: handleMessage,
       onClose: handleClose,
       onError: () => onErrorRef.current?.("The realtime connection reported an error."),
       // Every close except a refused handshake or a foreign session is worth
-      // another attempt; those two are final (gaps B4, F11).
+      // another attempt; those two are final.
       shouldReconnect: (event: CloseEvent) => !NO_RETRY_CLOSE_CODES.has(event.code),
       reconnectAttempts: RECONNECT_ATTEMPTS,
       reconnectInterval: RECONNECT_INTERVAL_MS,
@@ -243,7 +243,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
     onErrorRef.current = onError;
   });
 
-  // The handshake is the first frame of a fresh connection (gap S8), and only a
+  // The handshake is the first frame of a fresh connection, and only a
   // socket that is already open may carry it: the library queues writes while a
   // socket is still connecting, which would delay authentication or double it.
   useEffect(() => {
@@ -257,7 +257,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
   }, [readyState, sendJsonMessage, token, userId]);
 
   // Heartbeats keep proxies and load balancers from timing an idle connection
-  // out; they are not evidence that the server is alive (gap B2). A ping is
+  // out; they are not evidence that the server is alive. A ping is
   // therefore tracked until its pong arrives, and an open socket that stops
   // answering is closed so the library replaces it.
   useEffect(() => {
@@ -282,7 +282,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
     async (text: string) => {
       // The transport is chosen here, before anything is sent. Falling back to
       // HTTP later would mean the socket send had already been accepted, so the
-      // message could be stored twice (gap F11).
+      // message could be stored twice.
       const socketCanCarryIt =
         readyStateRef.current === ReadyState.OPEN && authenticatedRef.current;
       if (!socketCanCarryIt) {
@@ -318,7 +318,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
     if (readyState === ReadyState.OPEN) {
       return authenticatedUserId === null ? "connecting" : "connected";
     }
-    // A refused handshake is final (gap B4): HTTP carries chat from here on.
+    // A refused handshake is final: HTTP carries chat from here on.
     if (refused) return "offline";
     return everConnected ? "reconnecting" : "connecting";
   }, [authenticatedUserId, everConnected, readyState, refused, token, userId]);

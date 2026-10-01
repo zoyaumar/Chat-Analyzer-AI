@@ -15,7 +15,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post(
     "/login",
     response_model=schemas.Token,
-    # Brute-force surface: limited per client address (gap S6). The origin guard
+    # Brute-force surface: limited per client address. The origin guard
     # keeps a foreign page from minting a session cookie for its own account.
     dependencies=[
         Depends(ratelimit.login_rate_limit),
@@ -45,12 +45,12 @@ async def login(
     if not valid:
         raise credentials_error
     if rehashed is not None:
-        # The stored hash predates gap S10 (bcrypt, or stale argon2 parameters).
+        # The stored hash needs rehashing (bcrypt, or stale argon2 parameters).
         # The login that just proved the password is the moment to rewrite it, so
         # accounts migrate themselves instead of waiting for a backfill script.
         user.password_hash = rehashed
 
-    # The session has two halves (gaps S7/S9, Q9): a short-lived access token in
+    # The session has two halves: a short-lived access token in
     # the response body — held in memory by the SPA — and a rotating refresh
     # token in an HttpOnly cookie, stored hashed. Only the pair together is a
     # session, and only the cookie's row is revocable (`POST /users/logout`).
@@ -73,7 +73,7 @@ async def login(
     "/refresh",
     response_model=schemas.Token,
     # The cookie is the credential, so the request that spends it must be
-    # provably same-origin (gap S9); there is no bearer header to fall back on.
+    # provably same-origin; there is no bearer header to fall back on.
     dependencies=[Depends(auth_utils.require_same_origin)],
 )
 async def refresh_access_token(
@@ -81,7 +81,7 @@ async def refresh_access_token(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange the refresh cookie for a new access token (gaps S7/S9, Q9).
+    """Exchange the refresh cookie for a new access token.
 
     Rotation on every use: the presented token's row is deleted and a
     replacement issued, so each token works exactly once. Replaying a copy the
@@ -129,7 +129,7 @@ async def logout(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Revoke this session's refresh token and retire the cookie (gap S7).
+    """Revoke this session's refresh token and retire the cookie.
 
     Logout exists server-side now: the row is deleted, so the cookie — even a
     copy taken before logout — no longer refreshes anything. The short-lived
@@ -152,7 +152,7 @@ async def logout(
 @router.post(
     "/register",
     response_model=schemas.UserOut,
-    # Spam surface: a smaller budget over a longer window (gap S6). The policy
+    # Spam surface: a smaller budget over a longer window. The policy
     # itself — username shape, password length — is enforced by `UserCreate`,
     # so the two layers are independent: a body that `422`s still spends budget,
     # which is what a sprayer sends anyway (see `tests/test_rate_limit.py`).
@@ -187,11 +187,11 @@ async def read_user(
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Public profile fields for `user_id` — attribution for a message (gap F10).
+    """Public profile fields for `user_id` — attribution for a message.
 
     Registered after `GET /users/me`, which wins the `/users/me` path. Only the
     safe projection leaves (`UserOut`: id, username, created_at) — never the
-    password hash (gap S3).
+    password hash.
     """
     user = await db.get(models.User, user_id)
     if user is None:
@@ -206,7 +206,7 @@ async def delete_users_me(
 ):
     """Delete the authenticated account and everything that belongs to it.
 
-    The messages go with it through the FK's `ON DELETE CASCADE` (gap D4); the
+    The messages go with it through the FK's `ON DELETE CASCADE`; the
     relationship's `passive_deletes=True` means this is a single `DELETE`, not
     a load-then-delete of every message. The issued token dies with the user,
     because `get_current_user` can no longer resolve it.

@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 /*
- * One visible keyboard focus ring for every interactive control (gap F12).
+ * One visible keyboard focus ring for every interactive control.
  * Defined once here instead of repeating four utilities on each element: this
  * is the first step away from the "repeated utility cluster" trade-off noted
- * in docs/DESIGN_DECISIONS.md.
+ * in docs/design_decisions.md.
  */
 @layer components {
   .focus-ring {

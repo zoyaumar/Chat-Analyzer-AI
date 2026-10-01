@@ -7,7 +7,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => {
   // Dev only: the browser talks to Vite, which forwards API and WebSocket
   // traffic to FastAPI. Override with VITE_DEV_API_TARGET in chat_frontend/.env
-  // (docs/DESIGN_DECISIONS.md Q34).
+  // (docs/design_decisions.md).
   const { VITE_DEV_API_TARGET } = loadEnv(mode, '.', '')
   const apiTarget = VITE_DEV_API_TARGET || 'http://127.0.0.1:8000'
 

@@ -667,8 +667,8 @@ feed; and dependency updates with CVE scanning in CI.
 | Password/username policy, rate limiting on login and register | ✅ done |
 | Automated accessibility audit (axe) | ✅ done — `src/test/a11y.test.tsx` |
 | A dedicated login-form test | ✅ done — `src/test/authForms.test.tsx` |
-| Sentiment trend dashboard (P12) | ✅ done — 7/30/90-day window, SVG chart + data table |
-| Single-process pin + startup guard (N5) | ✅ done — [`docs/scaling.md`](docs/scaling.md) |
+| Sentiment trend dashboard | ✅ done — 7/30/90-day window, SVG chart + data table |
+| Single-process pin + startup guard | ✅ done — [`docs/scaling.md`](docs/scaling.md) |
 | Tailwind design tokens in a CSS `@theme` block | ⬜ open |
 | Upgrade the Python pins that carry advisories (`transformers`) | ⬜ open — 9 advisories have no fixed release upstream |
 | Types generated from OpenAPI; delete dead files and template leftovers | ⬜ open |

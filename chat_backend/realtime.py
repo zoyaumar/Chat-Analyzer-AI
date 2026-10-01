@@ -1,4 +1,4 @@
-"""The realtime channel: the wire contract plus the in-process fan-out (gap B1).
+"""The realtime channel: the wire contract plus the in-process fan-out.
 
 Two things live here because both are shared by every writer of a message:
 
@@ -7,17 +7,17 @@ Two things live here because both are shared by every writer of a message:
 * the **connection registry** — sockets grouped by user id.
 
 Grouping by user id is deliberate. Every REST read is scoped to the author
-(`GET /messages/` returns *your* messages, gap S2), so a message may only be
+(`GET /messages/` returns *your* messages), so a message may only be
 pushed to connections that are allowed to see it: fan-out is per user, not to
-everyone. When conversations land (gap P1) the grouping key becomes the
+everyone. When conversations land the grouping key becomes the
 conversation id and the envelope does not change.
 
 Broadcasting to *every* connected client instead — a public/global timeline — is a
 product decision rather than the default, because it would push messages a reader
-cannot fetch again (S2). It is listed as a future feature (gap P16) and is not
+cannot fetch again. It is listed as a future feature and is not
 implemented here.
 
-One process, one registry (gaps Q18/N5): the fan-out is in memory, and `send_to_user`
+One process, one registry: the fan-out is in memory, and `send_to_user`
 is best effort — a socket that fails to receive is dropped rather than blocking
 the writer.
 
@@ -25,7 +25,7 @@ the writer.
 with more than one worker a socket held by worker A never receives a message written
 through worker B. Each user sees a partial conversation, and nothing is logged. The
 startup guard announces this loudly rather than leaving it to be discovered; scaling
-out properly needs a shared broker (gap P17). See `docs/scaling.md`.
+out properly needs a shared broker. See `docs/scaling.md`.
 """
 
 import asyncio

@@ -11,7 +11,7 @@ import { mergeMessages } from "../messages";
 import type { Message, MessagePageParams } from "../types";
 import { queryKeys } from "./keys";
 
-/** Matches the backend maximum (`GET /messages/?limit=`, gap F6/B10). */
+/** Matches the backend maximum (`GET /messages/?limit=`). */
 const PAGE_SIZE = 100;
 
 const FIRST_PAGE: MessagePageParams = { limit: PAGE_SIZE };
@@ -43,7 +43,7 @@ function updateFeedCache(
  *
  * Idempotent by construction: filtering for an id that is not there is a no-op,
  * so a deletion announced twice — the delete response and the socket frame, or
- * two tabs of the same user — cannot remove anything twice (gap B1).
+ * two tabs of the same user — cannot remove anything twice.
  */
 function removeMessage(pages: Message[][], messageId: number): Message[][] {
   return pages.map((page) => page.filter((message) => message.id !== messageId));
@@ -53,7 +53,7 @@ function removeMessage(pages: Message[][], messageId: number): Message[][] {
  * Merge a new message into the newest page. The pages are cached oldest-last,
  * so growing the first page cannot disturb the pagination cursor, which is read
  * from the last page. `mergeMessages` de-duplicates by `id`, so the socket echo
- * of a message we just sent does not add a second copy (gap F6).
+ * of a message we just sent does not add a second copy.
  */
 function appendToNewestPage(pages: Message[][], message: Message): Message[][] {
   const [newest = [], ...older] = pages;
@@ -77,7 +77,7 @@ export function useMessageFeed(userId: number | null) {
   });
 
   // The merge helper stays the single boundary between "pages plus socket
-  // frames" and "one chronological list" (gap F6).
+  // frames" and "one chronological list".
   const messages = useMemo(
     () => mergeMessages([], (query.data?.pages ?? []).flat()),
     [query.data]
@@ -116,7 +116,7 @@ export function useDeleteMessage(userId: number | null) {
 
 /**
  * A socket frame arrives outside React's data flow, so it writes the cache
- * directly: this is the connection callback the realtime hook calls (M2, gap B1).
+ * directly: this is the connection callback the realtime hook calls.
  * It merges by `id`, so the echo of a message this tab just sent is not a second
  * copy, and it is a no-op when the feed has not been loaded yet.
  */
@@ -130,7 +130,7 @@ export function useAppendSocketMessage(userId: number | null) {
   );
 }
 
-/** The deletion broadcast handler: same idempotent removal the delete uses (B1). */
+/** The deletion broadcast handler: same idempotent removal the delete uses. */
 export function useRemoveSocketMessage(userId: number | null) {
   const queryClient = useQueryClient();
 

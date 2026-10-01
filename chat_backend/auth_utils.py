@@ -19,18 +19,18 @@ from chat_backend.database import get_db
 
 ALGORITHM = "HS256"
 
-#: Cookie carrying the refresh token (gaps S7/S9). `HttpOnly` keeps it out of
+#: Cookie carrying the refresh token. `HttpOnly` keeps it out of
 #: JavaScript entirely; `Path=/users` keeps it off every other endpoint — only
 #: login, refresh and logout ever see it.
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_PATH = "/users"
 
 # argon2id writes every password registered from now on; bcrypt is kept in the
-# list purely so hashes written before the migration still open (gap S10).
+# list purely so hashes written before the migration still open.
 # `PasswordHash.hash()` always uses the *first* hasher, so registration produces
 # argon2 and `verify_and_rehash` hands back an argon2 replacement for a bcrypt
 # hash that just proved itself. Accounts therefore upgrade one login at a time —
-# no lockout, no backfill script, and the `bcrypt<4.1` stopgap (Q7) retires with
+# no lockout, no backfill script, and the `bcrypt<4.1` stopgap retires with
 # the last bcrypt row it ever has to verify.
 password_hash = PasswordHash((Argon2Hasher(), BcryptHasher()))
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
@@ -60,22 +60,22 @@ def verify_and_rehash(
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Whether the password opens the hash, ignoring any upgrade (gap S10)."""
+    """Whether the password opens the hash, ignoring any upgrade."""
     valid, _ = verify_and_rehash(plain_password, hashed_password)
     return valid
 
 
 def get_password_hash(password: str) -> str:
-    """Hash with the current hasher — argon2id, never bcrypt (gap S10)."""
+    """Hash with the current hasher — argon2id, never bcrypt."""
     return password_hash.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """Sign an access token carrying `iat` and `jti` next to `sub`/`exp` (gaps S7, Q8).
+    """Sign an access token carrying `iat` and `jti` next to `sub`/`exp`.
 
     `jti` gives the token a unique id and `iat` the moment it was minted: both
     are what a future denylist or session audit needs, and they are written now
-    so revocation never needs another token-format change (Q9/S7). The claims
+    so revocation never needs another token-format change. The claims
     are informational only — the revocable half of the session is the refresh
     token, not this one.
     """
@@ -90,7 +90,7 @@ def generate_refresh_token() -> str:
     """256 bits of `token_urlsafe` entropy — opaque, unguessable, not a JWT.
 
     The value never needs to be parsed, only looked up by hash, so there is no
-    payload to forge and no signature to keep in sync (gap S7).
+    payload to forge and no signature to keep in sync.
     """
     return secrets.token_urlsafe(32)
 
@@ -110,7 +110,7 @@ def refresh_token_expiry() -> datetime:
 
 
 def set_refresh_cookie(response: Response, token: str) -> None:
-    """Attach the refresh token as `HttpOnly; SameSite=Strict; Path=/users` (gap S9).
+    """Attach the refresh token as `HttpOnly; SameSite=Strict; Path=/users`.
 
     `HttpOnly` is the line of defence XSS does not get to cross (the JS half of
     the session lives in memory only); `SameSite=Strict` means no cross-site
@@ -130,7 +130,7 @@ def set_refresh_cookie(response: Response, token: str) -> None:
 
 
 def clear_refresh_cookie(response: Response) -> None:
-    """Retire the cookie — same attributes the browser matches on (gap S7)."""
+    """Retire the cookie — same attributes the browser matches on."""
     response.delete_cookie(
         REFRESH_COOKIE_NAME,
         path=REFRESH_COOKIE_PATH,
@@ -140,7 +140,7 @@ def clear_refresh_cookie(response: Response) -> None:
 
 
 async def require_same_origin(request: Request) -> None:
-    """Reject cross-site requests to the cookie endpoints (gaps S9, S7).
+    """Reject cross-site requests to the cookie endpoints.
 
     The cookie carries the session, so anything that can make the browser *send*
     it from another site is a CSRF attempt. Two signals are checked, most
@@ -155,7 +155,7 @@ async def require_same_origin(request: Request) -> None:
     Neither header present means a non-browser client (curl, a test) — a
     cross-site attack always comes with a browser attached, so there is nothing
     to reject. `SameSite=Strict` on the cookie already refuses the cross-site
-    send; this is the second, explicit layer (gap S9).
+    send; this is the second, explicit layer.
     """
     sec_fetch_site = request.headers.get("sec-fetch-site")
     if sec_fetch_site is not None:
@@ -174,7 +174,7 @@ def user_id_from_token(token: str) -> int | None:
 
     Shared by the REST dependency and the WebSocket handshake so both transports
     answer the same question the same way: an unreadable, expired or malformed
-    token is simply "no user", never a server error (gap S1).
+    token is simply "no user", never a server error.
     """
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])

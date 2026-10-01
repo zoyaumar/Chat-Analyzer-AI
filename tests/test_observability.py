@@ -1,4 +1,4 @@
-"""Tests for the structured-logging layer (gap O5): JSON lines + X-Request-ID."""
+"""Tests for the structured-logging layer: JSON lines + X-Request-ID."""
 import json
 import logging
 import re

@@ -6,7 +6,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated, initialised, sessionExpired } = useAuth();
   const location = useLocation();
 
-  // The refresh cookie is still being checked (gap S9): a blank moment beats
+  // The refresh cookie is still being checked: a blank moment beats
   // bouncing a signed-in user through the login page on every reload.
   if (!initialised) {
     return null;

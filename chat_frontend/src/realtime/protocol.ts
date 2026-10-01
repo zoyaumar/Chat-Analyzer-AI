@@ -1,18 +1,18 @@
 /**
- * The `/ws/chat` wire contract in one place (gaps S8/B1/F11).
+ * The `/ws/chat` wire contract in one place.
  *
  * The socket carries JSON frames in both directions. Nothing here is stored:
  * a frame is either a control message (auth, ping) or an announcement of
  * something the server already did (a stored message, a completed delete) — which
  * is why the same frame shape can be produced by an HTTP request too.
  *
- * The token travels in the first frame, never in the URL (gap S8): a URL ends up
+ * The token travels in the first frame, never in the URL: a URL ends up
  * in access logs, proxy caches and browser history.
  */
 
 import type { Message } from "../types";
 
-/** Where the chat socket lives. Same origin as the page (Q34), so no host config. */
+/** Where the chat socket lives. Same origin as the page, so no host config. */
 export const CHAT_SOCKET_PATH = "/ws/chat";
 
 /** The close code the server uses for an unacceptable handshake (RFC 6455). */
@@ -93,8 +93,8 @@ function isMessage(value: unknown): value is Message {
  *
  * The server validates every frame it receives, so the client validates every
  * frame it is given rather than trusting the shape: an unexpected payload is
- * dropped, never written into the feed (gap F3 — the old connector's bare
- * `JSON.parse` could throw, and an unchecked body could carry anything).
+ * dropped, never written into the feed — the old connector's bare
+ * `JSON.parse` could throw, and an unchecked body could carry anything.
  */
 export function parseFrame(data: unknown): IncomingFrame | null {
   if (typeof data !== "string") return null;
@@ -131,7 +131,7 @@ export function parseFrame(data: unknown): IncomingFrame | null {
 
 /**
  * The absolute `ws(s)://` URL for the chat socket — deliberately carrying no
- * credentials (gap S8): the socket authenticates itself with a frame instead.
+ * credentials: the socket authenticates itself with a frame instead.
  *
  * The page's own location is a parameter so both schemes can be exercised in
  * tests without replacing jsdom's non-configurable `window.location`.
@@ -146,7 +146,7 @@ let sequence = 0;
 
 /**
  * An id for the next send, so the echo of *that* message can be recognised.
- * Unique per tab and never persisted: it exists for the round trip only (F11).
+ * Unique per tab and never persisted: it exists for the round trip only.
  */
 export function nextClientId(): string {
   sequence += 1;

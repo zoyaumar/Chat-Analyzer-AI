@@ -4,7 +4,7 @@ import type { Message } from "../types";
 interface MessageListProps {
   messages: Message[];
   currentUserId: number | null;
-  /** Usernames by user id, from `useUsernames`; unknown ids fall back to `User <id>` (F10). */
+  /** Usernames by user id, from `useUsernames`; unknown ids fall back to `User <id>`. */
   usernames?: Record<number, string>;
   deletingMessageId: number | null;
   onDeleteMessage: (id: number) => void;
@@ -37,7 +37,7 @@ export default function MessageList({
       role="log"
       aria-live="polite"
       aria-label="Messages"
-      // Scrollable regions are focusable so a keyboard user can scroll them (F12).
+      // Scrollable regions are focusable so a keyboard user can scroll them.
       tabIndex={0}
       className="focus-ring border p-2 h-64 sm:h-80 overflow-y-auto mb-4"
     >

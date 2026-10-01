@@ -1,4 +1,4 @@
-"""Socket tests: handshake, frames, fan-out and deletion broadcasts (S1, S8, B1).
+"""Socket tests: handshake, frames, fan-out and deletion broadcasts.
 
 `TestClient` is synchronous and drives the app in its own event loop, so these
 tests use the `ws_client` fixture: a `NullPool` engine over the same test
@@ -155,7 +155,7 @@ def test_socket_stores_echoes_and_correlates_a_message(ws_client):
     stored = ws_client.get("/messages/", headers=_auth(token)).json()
     assert [row["text"] for row in stored] == ["hello over the wire"]
     # One row, one representation: the frame and the REST resource agree on the
-    # id and on the serialized timestamp, both built on `MessageOut` (Q38).
+    # id and on the serialized timestamp, both built on `MessageOut`.
     assert frame["message"] == stored[0]
 
 

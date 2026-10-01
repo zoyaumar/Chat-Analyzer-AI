@@ -1,7 +1,7 @@
 import type { SentimentTimelineEntry } from "../types";
 
 /**
- * Sentiment trend as a plain SVG — no charting dependency (gap P12).
+ * Sentiment trend as a plain SVG — no charting dependency.
  *
  * Two things this deliberately does not do. It does not zero-fill missing days:
  * the API omits days with no activity, and inventing a flat line for them would

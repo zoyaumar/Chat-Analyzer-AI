@@ -12,14 +12,14 @@ class User(Base):
 
     # `Mapped[]` annotations keep mypy honest about instance-level types
     # (`user.id` is an `int`, not a `Column`); the values stay classic
-    # `Column(...)` so the schema and the migration do not change (gap T3).
+    # `Column(...)` so the schema and the migration do not change.
     # The nullable additions use `mapped_column`: there the annotation *is* the
     # nullability, so `Mapped[datetime | None]` stays honest instead of being
     # flattened to `datetime` by the plugin's `Column` inference.
     id: Mapped[int] = Column(Integer, primary_key=True, index=True)
     username: Mapped[str] = Column(String, unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = Column(String, nullable=False)
-    # Account-age bookkeeping (gap D5): set by the database on insert, by
+    # Account-age bookkeeping: set by the database on insert, by
     # SQLAlchemy on the next ORM update.
     created_at: Mapped[datetime] = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -29,7 +29,7 @@ class User(Base):
     )
 
     # One-to-many relationship with messages. `passive_deletes=True` + the
-    # FK's ON DELETE CASCADE (D4): deleting a user never loads the messages,
+    # FK's ON DELETE CASCADE: deleting a user never loads the messages,
     # the database removes them in the same statement.
     messages: Mapped[list["Message"]] = relationship(
         "Message", back_populates="user", passive_deletes=True
@@ -43,7 +43,7 @@ class Message(Base):
     user_id: Mapped[int] = Column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    # 4000 matches `MessageCreate.text`'s Pydantic limit (gap D6/B3).
+    # 4000 matches `MessageCreate.text`'s Pydantic limit.
     text: Mapped[str] = Column(String(4000), nullable=False)
     timestamp: Mapped[datetime] = Column(
         DateTime(timezone=True), server_default=func.now(), index=True
@@ -61,7 +61,7 @@ class Message(Base):
 
 
 class MessageSentiment(Base):
-    """One persisted score per message (gaps D7, A4, A7).
+    """One persisted score per message.
 
     Written once, at message creation, in the same transaction as the message —
     the API reads it back instead of re-running inference, and `model_name` /
@@ -86,14 +86,14 @@ class MessageSentiment(Base):
 
 
 class RefreshToken(Base):
-    """A revocable session — the stored half of the refresh flow (gaps S7/S9, Q9).
+    """A revocable session — the stored half of the refresh flow.
 
     Only the SHA-256 hash of the token is stored: a leaked database row is not
     a usable credential, and rotation deletes the row on every use, so replaying
-    a copy that the real client has already refreshed finds nothing (Q9).
+    a copy that the real client has already refreshed finds nothing.
 
     `user_id` cascades with the account: deleting a user takes their sessions
-    with it, in the same `DELETE` as the messages (gap D4).
+    with it, in the same `DELETE` as the messages.
     """
 
     __tablename__ = "refresh_tokens"

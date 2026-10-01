@@ -1,5 +1,5 @@
 # API image: installs pinned dependencies, applies migrations, starts Uvicorn.
-# Only nginx reaches this container (docs/DESIGN_DECISIONS.md Q34/Q41).
+# Only nginx reaches this container (docs/design_decisions.md).
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -15,8 +15,8 @@ COPY chat_backend/ chat_backend/
 
 EXPOSE 8000
 
-# Migrations first: Alembic is the only writer of DDL (gap O3).
-# -- single process on purpose (gap N5) --
+# Migrations first: Alembic is the only writer of DDL.
+# -- single process on purpose --
 # The model weights, the rate-limit counters and the WebSocket registry are all
 # per-process, so a second worker silently splits fan-out and multiplies memory.
 # Explicit rather than implied: see docs/scaling.md.

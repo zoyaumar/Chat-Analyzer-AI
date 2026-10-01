@@ -13,7 +13,7 @@ async def test_health_ready(client: AsyncClient):
     body = resp.json()
     assert body["status"] == "ok"
     assert body["database"] == "up"
-    # Models are reported, not required (gaps A6/O5): chat works without them,
+    # Models are reported, not required: chat works without them,
     # so the probe stays 200 and says what state each capability is in.
     assert set(body["model_state"]) == {"sentiment", "summary"}
     assert all(

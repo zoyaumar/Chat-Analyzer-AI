@@ -1,7 +1,7 @@
-"""Opt-in accuracy check after an upgrade (gap A7).
+"""Opt-in accuracy check after an upgrade.
 
 Nothing here runs by default: the pinned models are ~300 MB and the suite has to
-stay offline (gaps T5/U4). Run it deliberately after bumping `transformers`,
+stay offline. Run it deliberately after bumping `transformers`,
 `torch`, or a pinned revision:
 
     RUN_AI_EVAL=1 python -m pytest tests/test_ai_eval.py -v

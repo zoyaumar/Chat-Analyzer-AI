@@ -1,5 +1,5 @@
 /**
- * Attribution and the feed's own accessibility contract (gaps F10, F12).
+ * Attribution and the feed's own accessibility contract.
  *
  * A pure component test — no query client, no fetch. `usernames` is the only
  * input, which is exactly the boundary `useUsernames` fills at runtime.
@@ -77,7 +77,7 @@ describe("MessageList", () => {
     expect(screen.getByText("BS")).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("is a labelled, live log that a keyboard can scroll (F12)", () => {
+  it("is a labelled, live log that a keyboard can scroll", () => {
     renderFeed([messageAt(4, 2)], { 2: "bob" });
 
     const log = screen.getByRole("log", { name: "Messages" });

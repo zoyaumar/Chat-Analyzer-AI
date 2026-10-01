@@ -1,5 +1,5 @@
 /**
- * The SPA's CSP baseline (gap S11): the meta tag is what a host without its
+ * The SPA's CSP baseline: the meta tag is what a host without its
  * own headers inherits, so it must exist and must lock scripts to the origin.
  */
 import { describe, expect, it } from "vitest";
@@ -13,7 +13,7 @@ function cspContent(): string {
   return match![1];
 }
 
-describe("index.html security baseline (gap S11)", () => {
+describe("index.html security baseline", () => {
   it("declares a Content-Security-Policy meta tag", () => {
     expect(cspContent()).toContain("default-src 'self'");
   });

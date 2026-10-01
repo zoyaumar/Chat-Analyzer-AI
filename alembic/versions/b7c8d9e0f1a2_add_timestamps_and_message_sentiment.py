@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Timestamps as `timestamptz` + one persisted score per message (gaps D5, D7, A4, A7).
+    """Timestamps as `timestamptz` + one persisted score per message.
 
     `created_at`/`updated_at` are `timezone=True` so a stored value means an
     instant, not a wall clock reading; the summariser and the sentiment model

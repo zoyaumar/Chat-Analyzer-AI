@@ -1,4 +1,4 @@
-"""Per-client rate limiting for the credential endpoints (gap S6).
+"""Per-client rate limiting for the credential endpoints.
 
 `POST /users/login` could be hammered without limit and `POST /users/register`
 was open to spam. Both now count attempts per client address in a sliding
@@ -9,12 +9,12 @@ alternatives both cost more than they buy at this size: `slowapi` adds a
 dependency (and pulls in `limits`) for what one class here does, while a
 reverse-proxy rule lives outside the application, cannot be exercised by the
 test suite, and needs a reload to tune. The counter is the *in-process* option
-of the still-open "shared state" question (U8) — no Redis, nothing to run.
+of the still-open "shared state" question — no Redis, nothing to run.
 
 **What it does not do, stated plainly.**
 - PER-PROCESS BY DESIGN: state is per process, so N uvicorn workers multiply every
   limit by N. That is exact at one worker, which the startup guard enforces loudly;
-  a shared store is what makes it exact beyond that (gap P17, docs/scaling.md).
+  a shared store is what makes it exact beyond that (see docs/scaling.md).
 - The bucket key trusts `X-Real-IP`, which is only safe because nginx overwrites
   that header (`docker/nginx.conf`) and the `api` service publishes no port
   (`docker-compose.yml`). Where the API is exposed directly, a client can forge
@@ -122,7 +122,7 @@ REGISTER_LIMITER = SlidingWindowLimiter(
 # rate-limited endpoint is part of the contract, not an accident.
 RATE_LIMIT_RESPONSES: dict[int | str, dict[str, Any]] = {
     status.HTTP_429_TOO_MANY_REQUESTS: {
-        "description": "Too many attempts from this client; wait `Retry-After` seconds (gap S6)."
+        "description": "Too many attempts from this client; wait `Retry-After` seconds."
     }
 }
 
@@ -162,10 +162,10 @@ def _enforce(limiter: SlidingWindowLimiter, request: Request, scope: str) -> Non
 
 
 async def login_rate_limit(request: Request) -> None:
-    """`Depends` target for `POST /users/login` (gap S6)."""
+    """`Depends` target for `POST /users/login`."""
     _enforce(LOGIN_LIMITER, request, "login")
 
 
 async def register_rate_limit(request: Request) -> None:
-    """`Depends` target for `POST /users/register` (gap S6)."""
+    """`Depends` target for `POST /users/register`."""
     _enforce(REGISTER_LIMITER, request, "register")

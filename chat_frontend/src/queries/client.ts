@@ -5,7 +5,7 @@ import { isApiError } from "../apiClient";
 const MAX_RETRIES = 2;
 
 /**
- * `retry` predicate for TanStack Query (docs/DESIGN_DECISIONS.md Q28, gap F16).
+ * `retry` predicate for TanStack Query (docs/design_decisions.md).
  *
  * A retry cannot fix a rejected request: `4xx` answers (401, 404, 422 …) are
  * final, so they surface immediately; network failures (status `0`) and `5xx`
@@ -23,7 +23,7 @@ export function shouldRetryRequest(failureCount: number, error: unknown): boolea
  * `staleTime` is short but non-zero so navigating between `/chat` and
  * `/analytics` reuses the cache instead of refetching the whole feed.
  * Focus refetching is off: the feed is paginated (a refetch walks every loaded
- * page) and realtime pushes arrive in M2 (gaps B1/B12). Mutations keep the
+ * page) and realtime pushes arrive over the socket. Mutations keep the
  * cache correct in the meantime (see `queries/messages.ts`).
  */
 export function createQueryClient(): QueryClient {

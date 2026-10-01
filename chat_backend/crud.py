@@ -1,4 +1,4 @@
-"""The shared service layer: every read and write of a message (gaps B12/Q38).
+"""The shared service layer: every read and write of a message.
 
 Both transports go through here — the REST routes and the WebSocket handler — so
 a message created over HTTP and one created over the socket cannot drift apart,
@@ -19,12 +19,12 @@ logger = logging.getLogger("chat_backend.crud")
 
 
 async def _attach_sentiment(db: AsyncSession, message: models.Message) -> None:
-    """Score the message at write time (gaps A4/D7, decided Q23).
+    """Score the message at write time.
 
     Best-effort by design: sentiment runs in a thread (a first-call model load
     must not block the event loop), and any failure — model unavailable, bad
-    input — leaves the message untouched. Chat must work with the AI layer down
-    (gap A6); only the score is lost.
+    input — leaves the message untouched. Chat must work with the AI layer down:
+only the score is lost.
     """
     try:
         result = await asyncio.to_thread(ai_utils.analyze_sentiment, message.text)
@@ -96,7 +96,7 @@ async def delete_message(db: AsyncSession, *, message_id: int, user_id: int) -> 
     """Delete `message_id` when it belongs to `user_id`; report whether it did.
 
     No such message and someone else's message are the same answer (`False`), so
-    the result cannot be used to discover which ids exist (gap S2).
+    the result cannot be used to discover which ids exist.
     """
     result = await db.execute(
         select(models.Message).where(

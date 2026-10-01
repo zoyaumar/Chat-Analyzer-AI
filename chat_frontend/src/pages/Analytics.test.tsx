@@ -17,7 +17,7 @@ vi.mock("../components/Navbar", () => ({
 }));
 
 describe("Analytics", () => {
-  // The trend dashboard (gap P12) is not click-gated, so the default in every
+  // The trend dashboard is not click-gated, so the default in every
   // test below is an empty window unless a test says otherwise.
   beforeEach(() => {
     getSentimentTimeline.mockResolvedValue({ days: 30, timeline: [] });
@@ -69,7 +69,7 @@ describe("Analytics", () => {
     expect(getDailySummary).toHaveBeenCalledTimes(1);
   });
 
-  // --- Screen-reader pass (gap F12, the remainder) --------------------------
+  // --- Screen-reader pass ---------------------------------------------------
   // The axe audit proves nothing is *broken*; these prove the things a
   // screen-reader user needs that axe cannot see: async results must be
   // announced, the announcement has to name what it is reporting, and the page
@@ -117,7 +117,7 @@ describe("Analytics", () => {
     ).toBeInTheDocument();
   });
 
-  // --- Trend dashboard (gap P12, the A3 remainder) ------------------------
+  // --- Trend dashboard ----------------------------------------------------
   // The endpoint already existed; what was missing was anything that read it.
   // These pin the three states that matter: data, no data, and a changed window.
 

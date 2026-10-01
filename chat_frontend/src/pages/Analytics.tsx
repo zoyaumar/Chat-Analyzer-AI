@@ -100,7 +100,7 @@ export default function Analytics() {
               className="mt-3 p-3 bg-gray-50 border rounded text-sm"
             >
               {/* The result appears without moving focus, so it has to say what
-                  it is as well as what it says (gap F12). The explicit `{" "}`
+                  it is as well as what it says. The explicit `{" "}`
                   is load-bearing: JSX drops the newline between the spans. */}
               <span className="sr-only">Sentiment:</span>{" "}
               <span className="font-semibold capitalize">{sentiment.data.label}</span>{" "}

@@ -1,4 +1,4 @@
-"""Structured request logging (gap O5).
+"""Structured request logging.
 
 Stdlib-only JSON lines on stdout — one JSON object per log record — plus a
 request-id middleware: every HTTP request gets an `X-Request-ID` (honoured
@@ -8,7 +8,7 @@ request, and returned in the 500 body so a user report can be matched to a
 log line without needing an error-tracking vendor.
 
 Sentry/OpenTelemetry is deliberately not wired in yet: there is no
-deployment target to send events to (open question U7).
+deployment target to send events to.
 """
 import json
 import logging

@@ -19,11 +19,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Create the revocable-session table for the refresh flow (gaps S7/S9, Q9).
+    """Create the revocable-session table for the refresh flow.
 
     Only a SHA-256 hash of the token is stored (`token_hash`, unique), so a
     database dump is not a set of live credentials. `user_id` cascades with the
-    account, keeping sessions in the same `DELETE` as the messages (gap D4).
+    account, keeping sessions in the same `DELETE` as the messages.
     """
     op.create_table(
         'refresh_tokens',

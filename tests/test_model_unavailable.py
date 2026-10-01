@@ -1,4 +1,4 @@
-"""Graceful degradation when the AI layer is down (gap A6).
+"""Graceful degradation when the AI layer is down.
 
 The API stays up, chat keeps working, and the two analytics endpoints that
 genuinely need a model answer `503` with a readable reason instead of a `500`.
@@ -47,7 +47,7 @@ async def test_daily_summary_returns_503_when_the_model_is_unavailable(
 
 
 async def test_chat_survives_the_ai_layer_being_down(client, user_and_token, monkeypatch):
-    """Sending, listing and deleting a message never touch a model (gap A6)."""
+    """Sending, listing and deleting a message never touch a model."""
 
     _, _, token = user_and_token
     monkeypatch.setattr(ai_utils, "analyze_sentiment", _unavailable)
@@ -66,7 +66,7 @@ async def test_chat_survives_the_ai_layer_being_down(client, user_and_token, mon
 async def test_daily_summary_does_not_block_the_event_loop(
     client, user_and_token, monkeypatch
 ):
-    """A slow summary must not stall other requests (gap N1).
+    """A slow summary must not stall other requests.
 
     `summarize_text` used to be called straight from an `async def` route, so
     the blocking model call ran on the event loop: while one user waited for
@@ -114,7 +114,7 @@ async def test_daily_summary_does_not_block_the_event_loop(
 async def test_daily_summary_still_503s_when_the_model_is_unavailable(
     client, user_and_token, monkeypatch
 ):
-    """The `to_thread` hop must not swallow `ModelUnavailableError` (gap N1)."""
+    """The `to_thread` hop must not swallow `ModelUnavailableError`."""
     from chat_backend.routes import analytics
 
     _, _, token = user_and_token

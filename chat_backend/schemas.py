@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# --- Credential policy (gap S6) -------------------------------------------
+# --- Credential policy ----------------------------------------------------
 # Registration used to accept a single character as a username and any Unicode
 # string as a password. These bounds are the policy; the response to a
 # violation is always `422` with the offending field named.
@@ -12,7 +12,7 @@ USERNAME_MAX_LENGTH = 32
 # nothing that needs escaping in a URL, a log line or a mention.
 USERNAME_PATTERN = r"^[A-Za-z0-9._-]+$"
 PASSWORD_MIN_LENGTH = 8
-# bcrypt is no longer the hasher that *writes* passwords — argon2id is (gap S10)
+# bcrypt is no longer the hasher that *writes* passwords — argon2id is
 # — but it still has to *verify* every password registered before the migration,
 # and bcrypt 5.0.0 raises `ValueError` on input over 72 bytes instead of truncating
 # it. Keeping registration inside that limit means both hashers accept exactly the
@@ -20,7 +20,7 @@ PASSWORD_MIN_LENGTH = 8
 # collision-prone (the old `passlib` stack truncated silently, so `"x" * 80` and
 # `"x" * 72 + "yyyy"` were the same credential). It also bounds the cost of hashing
 # attacker-sized input. A byte cap, not a character cap — 20 emoji are already
-# 80 bytes (gap S6).
+# 80 bytes.
 PASSWORD_MAX_BYTES = 72
 
 
@@ -32,7 +32,7 @@ class UserBase(BaseModel):
 
 # For registration (client sends plain password)
 class UserCreate(UserBase):
-    """The registration payload — the only place the policy applies (gap S6).
+    """The registration payload — the only place the policy applies.
 
     The constraints live here rather than on `UserBase` on purpose: `UserOut`
     inherits from it and must keep serialising accounts that predate the policy.
@@ -50,7 +50,7 @@ class UserCreate(UserBase):
     @field_validator("password")
     @classmethod
     def _password_fits_bcrypt(cls, value: str) -> str:
-        """Refuse a password the legacy hasher could not accept (gap S6)."""
+        """Refuse a password the legacy hasher could not accept."""
         if len(value.encode("utf-8")) > PASSWORD_MAX_BYTES:
             raise ValueError(
                 f"Password must be at most {PASSWORD_MAX_BYTES} bytes"
@@ -60,7 +60,7 @@ class UserCreate(UserBase):
 # For returning safe user data
 class UserOut(UserBase):
     id: int
-    # Account age, so a client can say when an account was created (gap D5).
+    # Account age, so a client can say when an account was created.
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -129,7 +129,7 @@ class SentimentDay(BaseModel):
 
 
 class SentimentTimeline(BaseModel):
-    """Sentiment over time for one user, oldest day first (gap A3)."""
+    """Sentiment over time for one user, oldest day first."""
 
     days: int
     timeline: list[SentimentDay]

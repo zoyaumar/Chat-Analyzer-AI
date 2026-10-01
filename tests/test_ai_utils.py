@@ -1,4 +1,4 @@
-"""Unit tests for the AI helpers themselves (gaps A1, A2, A4, A6, A7) — no weights.
+"""Unit tests for the AI helpers themselves — no weights.
 
 `fake_ai` (conftest) replaces the two public entry points so that no test ever
 downloads a model; this module asks for `real_ai` and drives the real
@@ -48,7 +48,7 @@ def clean_ai_state():
     ai_utils._analyze_cached.cache_clear()
 
 
-# --- A2: the token limit is enforced, not discovered at runtime --------------
+# --- the token limit is enforced, not discovered at runtime ------------------
 
 
 def test_sentiment_truncates_and_passes_the_token_limit(monkeypatch, real_ai):
@@ -106,7 +106,7 @@ def test_a_model_that_never_shortens_still_terminates(monkeypatch, real_ai):
     assert len(pipe.calls) < 100  # bounded passes: a request can never hang
 
 
-# --- A4: identical text is never scored twice -------------------------------
+# --- identical text is never scored twice -----------------------------------
 
 
 def test_identical_text_is_scored_once(monkeypatch, real_ai):
@@ -127,7 +127,7 @@ def test_a_cached_result_cannot_be_mutated_by_a_caller(monkeypatch, real_ai):
     assert ai_utils.analyze_sentiment("hello")["label"] == "POSITIVE"
 
 
-# --- A6: a failed load is typed, remembered and visible ----------------------
+# --- a failed load is typed, remembered and visible --------------------------
 
 
 def test_a_model_that_cannot_load_raises_a_typed_error_and_is_reported(monkeypatch):
@@ -160,7 +160,7 @@ def test_a_pipeline_is_loaded_once_and_then_reported_ready(monkeypatch):
     assert ai_utils.model_status("summary") == "not_loaded"
 
 
-# --- A7: pinned revisions and provenance ------------------------------------
+# --- pinned revisions and provenance ----------------------------------------
 
 
 def test_both_models_load_with_a_pinned_model_and_revision(monkeypatch):

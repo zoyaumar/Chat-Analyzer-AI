@@ -1,7 +1,7 @@
 import { run, type Result } from "axe-core";
 
 /**
- * Run axe over `node` and fail with a report a human can act on (gap F12).
+ * Run axe over `node` and fail with a report a human can act on.
  *
  * The suite used to assert accessibility one attribute at a time; this is the
  * automated audit that closes the gap, so a new screen cannot ship without an

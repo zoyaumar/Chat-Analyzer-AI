@@ -21,7 +21,7 @@ function tokenResponse(expiresInSeconds: number): Response {
   );
 }
 
-/** Probe so a test can drive `signOut` from inside the provider (gap S7). */
+/** Probe so a test can drive `signOut` from inside the provider. */
 function SignOutProbe() {
   const { signOut } = useAuth();
   return <button onClick={() => signOut()}>Sign out</button>;
@@ -83,7 +83,7 @@ describe("authentication guards", () => {
     expect(screen.getByText(/Protected page/)).toBeInTheDocument();
   });
 
-  it("adopts the legacy stored token once and deletes it (migration for gap S9)", () => {
+  it("adopts the legacy stored token once and deletes it", () => {
     localStorage.setItem("token", createToken(60));
 
     renderProtectedRoute();
@@ -94,7 +94,7 @@ describe("authentication guards", () => {
     expect(getAccessToken()).not.toBeNull();
   });
 
-  it("restores the session from the refresh cookie on boot (gap S9)", async () => {
+  it("restores the session from the refresh cookie on boot", async () => {
     const fetchMock = vi.fn().mockResolvedValue(tokenResponse(60));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -178,7 +178,7 @@ describe("authentication guards", () => {
     ).toBeInTheDocument();
   });
 
-  it("revokes the refresh token server-side on sign-out (gap S7)", async () => {
+  it("revokes the refresh token server-side on sign-out", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ detail: "Logged out" }), {
         status: 200,

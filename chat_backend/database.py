@@ -3,7 +3,7 @@ from sqlalchemy.orm import declarative_base
 
 from chat_backend.config import settings
 
-# Pooling tuned for a long-lived container behind a pooler (gap D9): pre-ping
+# Pooling tuned for a long-lived container behind a pooler: pre-ping
 # before handing out a connection, recycle before the pooler drops idle ones,
 # and size the pool below the pooler's own limit. A serverless deployment
 # would swap this for `poolclass=NullPool` instead.

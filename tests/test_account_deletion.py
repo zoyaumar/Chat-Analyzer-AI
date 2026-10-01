@@ -1,4 +1,4 @@
-"""Account deletion: the endpoint, the cascade, and the dead token (gap D4)."""
+"""Account deletion: the endpoint, the cascade, and the dead token."""
 from httpx import AsyncClient
 from sqlalchemy import func, select
 

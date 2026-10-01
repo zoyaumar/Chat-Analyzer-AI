@@ -21,7 +21,7 @@ from chat_backend.scaling import warn_if_multi_process
 setup_logging(logging.DEBUG if settings.debug else logging.INFO)
 logger = logging.getLogger("chat_backend.api")
 
-# --- Browser hardening (gap S11) ---
+# --- Browser hardening -------------
 # JSON responses get a locked-down CSP: nothing may load, embed or frame them.
 # The Swagger/ReDoc pages are real browser UIs and need the Swagger bundle and
 # its inline bootstrap, so they get the narrow policy that permits exactly that.
@@ -39,7 +39,7 @@ _DOCS_CSP = (
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Response headers for browser hardening (gap S11).
+    """Response headers for browser hardening.
 
     HSTS is emitted unconditionally: a browser ignores it over plain HTTP, so
     it is inert on `localhost` and takes effect the moment TLS terminates
@@ -62,13 +62,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """Optionally load the NLP models before the first request (gap N2).
+    """Optionally load the NLP models before the first request.
 
     Off unless `AI_WARMUP_ON_STARTUP` is set, and never fatal: a model that
     cannot load records itself in `ai_utils._LOAD_FAILURES` and shows up as
     `failed` in `/health/ready`, exactly as it would on the lazy path. Chat,
     history and deletes must never wait on — or be blocked by — the AI layer
-    (gap A6), so nothing here is allowed to stop the app from serving.
+so nothing here is allowed to stop the app from serving.
     """
     if settings.ai_warmup_on_startup:
         logger.info("Warming up NLP models before serving traffic…")
@@ -84,7 +84,7 @@ async def _lifespan(app: FastAPI):
 
     # Announce the single-process pin before serving anything, so a
     # misconfigured deploy says so in its first log lines rather than showing a
-    # split conversation hours later (gap N5).
+    # split conversation hours later.
     logger.info("Worker processes: %d", warn_if_multi_process())
 
     yield
@@ -98,7 +98,7 @@ app = FastAPI(
 )
 
 # No CORS middleware: the app is same-origin everywhere — Vite proxies in
-# development, nginx in production (gaps S4/F15, Q34).
+# development, nginx in production.
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 
@@ -110,10 +110,10 @@ app.include_router(websocket.router)
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Log the full traceback server-side; never leak details to clients (gap B11).
+    """Log the full traceback server-side; never leak details to clients.
 
     The request id goes into the log line *and* into the response body, so a
-    user-visible failure can be matched to its traceback (gap O5).
+    user-visible failure can be matched to its traceback.
     """
     request_id = getattr(request.state, "request_id", None)
     logger.exception(
@@ -136,7 +136,7 @@ async def health() -> dict:
 
 @app.get("/health/ready")
 async def readiness(db: AsyncSession = Depends(get_db)) -> JSONResponse:
-    """Readiness: the database answers `SELECT 1`; model state is reported (gaps A6/O5).
+    """Readiness: the database answers `SELECT 1`; model state is reported.
 
     Models are reported, not required. A deployment whose weights failed to
     download still serves chat, history and deletes, so the probe stays `200`

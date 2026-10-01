@@ -18,7 +18,7 @@ async def create_message(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Store the message, then push it to every socket the author has open (gap B1).
+    """Store the message, then push it to every socket the author has open.
 
     The push is the same frame a socket-sent message produces, so a tab that
     sends over HTTP with a dead socket still sees the message appear everywhere
@@ -60,7 +60,7 @@ async def delete_message(
 ):
     result = await crud.delete_message(db, message_id=message_id, user_id=current_user.id)
     if not result:
-        # "Not found" and "not yours" are deliberately one answer (gap S2), and a
+        # "Not found" and "not yours" are deliberately one answer, and a
         # delete that changed nothing tells the sockets nothing.
         raise HTTPException(status_code=404, detail="Message not found or not yours")
 

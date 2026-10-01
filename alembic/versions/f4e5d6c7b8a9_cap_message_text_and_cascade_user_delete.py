@@ -19,10 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Cap `messages.text` at 4000 and make user deletion cascade (gaps D6, D4).
+    """Cap `messages.text` at 4000 and make user deletion cascade.
 
     Existing rows cannot exceed 4000 characters: every write went through
-    `MessageCreate.text`'s Pydantic `max_length=4000` (gap B3).
+    `MessageCreate.text`'s Pydantic `max_length=4000`.
     """
     op.alter_column(
         'messages',

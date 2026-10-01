@@ -1,4 +1,4 @@
-"""Credential rate limiting (gap S6).
+"""Credential rate limiting.
 
 Two layers of proof. `SlidingWindowLimiter` is exercised on its own with an
 injected clock, so the window boundary is tested exactly and without sleeping.
@@ -18,8 +18,8 @@ PASSWORD = "pw123456"
 def test_a_zero_limit_is_rejected_at_startup():
     """A limit of 0 refuses even the first attempt — a misconfiguration, not a policy.
 
-    Rejected by `Settings` so the app fails to start (config.py, gap S5's
-    philosophy) rather than 500ing on somebody's first login.
+    Rejected by `Settings` so the app fails to start rather than 500ing on
+    somebody's first login.
     """
     with pytest.raises(ValidationError):
         Settings(
@@ -83,7 +83,7 @@ async def _login(client, password: str = PASSWORD, **kwargs):
 
 
 async def test_login_is_limited_per_client(client, monkeypatch):
-    """A password guesser runs out of attempts and is told to wait (gap S6).
+    """A password guesser runs out of attempts and is told to wait.
 
     The failed attempts are deliberate: every attempt spends budget, which is
     the whole point of a brute-force limit.
@@ -103,7 +103,7 @@ async def test_login_is_limited_per_client(client, monkeypatch):
 
 
 async def test_a_correct_password_is_refused_once_the_budget_is_spent(client, monkeypatch):
-    """The limit is not a failed-login detector — it gates the endpoint (gap S6)."""
+    """The limit is not a failed-login detector — it gates the endpoint."""
     monkeypatch.setattr(ratelimit.LOGIN_LIMITER, "limit", 1)
     await client.post("/users/register", json={"username": "alice", "password": PASSWORD})
 
@@ -112,7 +112,7 @@ async def test_a_correct_password_is_refused_once_the_budget_is_spent(client, mo
 
 
 async def test_registration_is_limited(client, monkeypatch):
-    """Open signup cannot be used to fill the table from one address (gap S6)."""
+    """Open signup cannot be used to fill the table from one address."""
     monkeypatch.setattr(ratelimit.REGISTER_LIMITER, "limit", 2)
 
     first = await client.post("/users/register", json={"username": "user1", "password": PASSWORD})
@@ -125,7 +125,7 @@ async def test_registration_is_limited(client, monkeypatch):
 
 
 async def test_login_and_registration_are_separate_budgets(client, monkeypatch):
-    """An exhausted login budget must not stop a legitimate signup (gap S6)."""
+    """An exhausted login budget must not stop a legitimate signup."""
     monkeypatch.setattr(ratelimit.LOGIN_LIMITER, "limit", 1)
     monkeypatch.setattr(ratelimit.REGISTER_LIMITER, "limit", 1)
 
@@ -140,7 +140,7 @@ async def test_login_and_registration_are_separate_budgets(client, monkeypatch):
 
 
 async def test_the_forwarded_address_is_the_bucket(client, monkeypatch):
-    """Behind nginx each client gets its own bucket, not the proxy's (gap S6)."""
+    """Behind nginx each client gets its own bucket, not the proxy's."""
     monkeypatch.setattr(ratelimit.LOGIN_LIMITER, "limit", 1)
 
     one = await _login(client, "wrongpass", headers={"X-Real-IP": "203.0.113.1"})
@@ -164,7 +164,7 @@ async def test_without_a_proxy_the_socket_peer_is_the_bucket(client, monkeypatch
 
 @pytest.mark.parametrize("path", ["/users/login", "/users/register"])
 async def test_the_limit_is_part_of_the_documented_contract(client, path):
-    """`/docs` advertises the `429`, so the behaviour is not a surprise (S6)."""
+    """`/docs` advertises the `429`, so the behaviour is not a surprise."""
     schema = (await client.get("/openapi.json")).json()
 
     assert "429" in schema["paths"][path]["post"]["responses"]

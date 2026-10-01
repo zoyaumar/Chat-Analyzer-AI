@@ -1,13 +1,13 @@
-# Single pinned dependency list for the project (gap D8).
+# Single pinned dependency list for the project.
 # Install: pip install -r requirements.txt
 #
 # The CPU wheel index must come first — a per-requirement --index-url switches pip's
-# index for every line after it (gap A5).
+# index for every line after it.
 
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 # --- runtime ---
-# O12: fastapi is pinned to a release whose `starlette>=0.46.0` range admits a
+# fastapi is pinned to a release whose `starlette>=0.46.0` range admits a
 # patched starlette, and `python-dotenv`/`python-multipart` are above every
 # advisory pip-audit reports against the versions this project used to pin.
 fastapi==0.142.0
@@ -22,9 +22,9 @@ asyncpg==0.31.0
 alembic==1.20.0
 
 PyJWT==2.15.0
-# Hashing (gap S10): argon2id writes every new hash, bcrypt stays only as the
+# Hashing: argon2id writes every new hash, bcrypt stays only as the
 # verifier for hashes written before the migration. Replaces unmaintained
-# passlib and the `bcrypt<4.1` stopgap it forced (Q6/Q7).
+# passlib and the `bcrypt<4.1` stopgap it forced.
 pwdlib[argon2,bcrypt]==0.3.1
 bcrypt==5.0.0
 argon2-cffi==25.1.0
@@ -37,7 +37,7 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.27.0
 # starlette >= 1.7 imports this for `TestClient`; without it starlette falls
-# back to `httpx` and warns (O12).
+# back to `httpx` and warns.
 httpx2==2.13.1
 ruff==0.16.5
 mypy==2.3.1

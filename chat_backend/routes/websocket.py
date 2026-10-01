@@ -1,15 +1,15 @@
-"""`/ws/chat` — the realtime channel (gaps S1, S8, B1/F11).
+"""`/ws/chat` — the realtime channel.
 
 The socket is a transport, not a second implementation of the API: frames are
 validated with the schemas the REST routes use, written through `crud`, and
 answered with frames built by `realtime`. A rule that changes for HTTP changes
-here too (Q38).
+here too.
 
 Authentication happens in the **first frame** — `{"type": "auth", "token": …}` —
-rather than in the query string (gap S8): a URL leaks into logs, proxy caches
+rather than in the query string: a URL leaks into logs, proxy caches
 and browser history, a frame does not. A socket that has not authenticated
 within `AUTH_TIMEOUT_SECONDS` is closed with 1008 and never joins the fan-out, so
-`send_to_user` can never target an unauthenticated connection (gaps S1/B3).
+`send_to_user` can never target an unauthenticated connection.
 
 A database session is opened per operation, not per connection: an idle socket
 holds no pool connection while it waits.
@@ -33,7 +33,7 @@ router = APIRouter()
 AUTH_TIMEOUT_SECONDS = 10.0
 
 #: RFC 6455 "policy violation": the handshake or a frame was unacceptable. The
-#: client must not silently re-authenticate on it (gap B4).
+#: client must not silently re-authenticate on it.
 POLICY_VIOLATION = 1008
 
 
@@ -82,7 +82,7 @@ async def _user_from_first_frame(raw: str) -> models.User | None:
     A `FrameError` propagates so a malformed first frame is answered with the
     reason its bytes deserve; a well-formed frame that simply is not an auth
     frame (a message, a ping) is a failed handshake. Either way nothing is
-    stored, nothing is echoed, and the socket never enters the registry (B3).
+    stored, nothing is echoed, and the socket never enters the registry.
     """
     frame = _decode_frame(raw)
     if frame.get("type") != "auth":
@@ -91,7 +91,7 @@ async def _user_from_first_frame(raw: str) -> models.User | None:
 
 
 async def _close_with_policy_violation(websocket: WebSocket, detail: str) -> None:
-    """Say why, then close with 1008 — the client's cue not to retry (gap B4)."""
+    """Say why, then close with 1008 — the client's cue not to retry."""
     with contextlib.suppress(RuntimeError):
         await websocket.send_json(realtime.error_frame(detail))
         await websocket.close(code=POLICY_VIOLATION)
@@ -114,7 +114,7 @@ async def _handle_frame(websocket: WebSocket, user_id: int, raw: str) -> None:
         raise FrameError(f"unsupported frame type: {frame_type!r}")
 
     # The same model the REST route validates with, so both transports accept and
-    # reject exactly the same text, length limit included (Q38).
+    # reject exactly the same text, length limit included.
     text = frame.get("text")
     if not isinstance(text, str):
         raise FrameError("text must be a string of at most 4000 characters")
@@ -128,7 +128,7 @@ async def _handle_frame(websocket: WebSocket, user_id: int, raw: str) -> None:
 
     # Sent to every socket of the author, this one included: the echo is how the
     # sender learns the id and the authoritative timestamp of what it sent.
-    # `client_id` returns untouched so the sending tab can match the frame (F11).
+    # `client_id` returns untouched so the sending tab can match the frame.
     client_id = frame.get("client_id")
     await manager.send_to_user(
         user_id,

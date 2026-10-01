@@ -4,7 +4,7 @@ import { queryKeys } from "./keys";
 
 /**
  * A name is stable for as long as the account exists, so one fetch per user id
- * is enough for a whole session (gap F10).
+ * is enough for a whole session.
  */
 const PROFILE_STALE_TIME = 5 * 60 * 1000;
 

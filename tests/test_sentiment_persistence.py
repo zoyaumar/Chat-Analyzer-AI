@@ -1,7 +1,7 @@
-"""Sentiment is persisted with the message it belongs to (gaps A4, A7, D7).
+"""Sentiment is persisted with the message it belongs to.
 
 Scoring happens in `crud.create_message`, the one write path both transports
-share (gap B12) — these tests go through the HTTP API and through `crud`
+share — these tests go through the HTTP API and through `crud`
 directly, which is what the socket handler uses.
 """
 from sqlalchemy import select
@@ -26,7 +26,7 @@ async def test_a_message_is_scored_once_at_write_time(client, user_and_token, db
     row = rows[0]
     assert row.message_id == response.json()["id"]
     assert (row.label, row.score) == ("POSITIVE", 0.99)
-    # Provenance travels with the score (gaps A7/D7), so a model upgrade stays auditable.
+    # Provenance travels with the score, so a model upgrade stays auditable.
     assert (row.model_name, row.model_version) == ("test-model", "test-revision")
     assert row.created_at is not None
 
@@ -34,7 +34,7 @@ async def test_a_message_is_scored_once_at_write_time(client, user_and_token, db
 async def test_the_shared_write_path_scores_socket_messages_too(
     client, db_session, user_and_token
 ):
-    """The socket handler calls `crud.create_message` (gap B12), so it scores as well."""
+    """The socket handler calls `crud.create_message`, so it scores as well."""
     _, _, token = user_and_token
     user_id = (
         await client.get("/users/me", headers={"Authorization": f"Bearer {token}"})
@@ -55,7 +55,7 @@ async def test_the_shared_write_path_scores_socket_messages_too(
 async def test_a_scoring_failure_never_costs_the_message(
     client, user_and_token, db_session, monkeypatch
 ):
-    """Chat must work with the AI layer down (gap A6): only the score is lost."""
+    """Chat must work with the AI layer down: only the score is lost."""
     _, _, token = user_and_token
 
     def explode(text: str) -> dict:
@@ -74,7 +74,7 @@ async def test_a_scoring_failure_never_costs_the_message(
 async def test_the_timeline_reads_the_stored_score_without_running_inference(
     client, user_and_token, monkeypatch
 ):
-    """The analytics read path is a lookup, not inference (gaps A4/D7)."""
+    """The analytics read path is a lookup, not inference."""
     _, _, token = user_and_token
     headers = {"Authorization": f"Bearer {token}"}
     await _send(client, token, "scored once at write time")

@@ -5,7 +5,7 @@ import { queryKeys } from "./keys";
 /**
  * `POST /analytics/sentiment` is a command — it runs a model on the text the
  * user typed — so it is a mutation: click-triggered, never fetched on mount and
- * deliberately not cached. Asking again means "analyze it again" (Q28/F16).
+ * deliberately not cached. Asking again means "analyze it again".
  */
 export function useSentimentAnalysis() {
   return useMutation({ mutationFn: (text: string) => analyzeSentiment(text) });
@@ -27,7 +27,7 @@ export function useDailySummary(enabled: boolean) {
 /**
  * `GET /analytics/sentiment/timeline` is the trend view: a read of scores that
  * were already stored at write time, so it is a query rather than a mutation
- * and it costs the same whatever the models are doing (gaps A3/A4, P12).
+ * and it costs the same whatever the models are doing.
  *
  * It is *not* gated behind a click the way the daily summary is. A chart with no
  * default render is a chart nobody sees, this read is cheap, and the API omits

@@ -5,7 +5,7 @@ log says so on every boot. This note records why, what breaks otherwise, and wha
 the exit path looks like.
 
 Related gaps: **N5** (this decision), **U8** (shared state), **P17** (Redis, future).
-Related decision: Q18 in [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md).
+Related decision: Q18 in [`design_decisions.md`](design_decisions.md).
 
 ## The three things that are per-process
 
@@ -78,7 +78,7 @@ informational line. At more than one it logs a single **ERROR** that names all
 three consequences, the two ways out, and the exit path:
 
 ```
-RUNNING 4 WORKER PROCESSES. single-process by design (gap N5): model weights,
+RUNNING 4 WORKER PROCESSES. single-process by design: model weights,
 rate limits and the WebSocket registry are per-process. This will: load the model
 weights 4 times over; make every credential rate limit 4 times looser
 (ratelimit.py); and split WebSocket fan-out, so a message written through one
@@ -86,7 +86,7 @@ worker never reaches a socket held by another (realtime.py) — users see a part
 conversation and nothing is logged. Run one worker (uvicorn --workers 1,
 WEB_CONCURRENCY=1, or replicas: 1) and resolve rolling-update overlap with
 strategy: Recreate or maxSurge: 0. To scale out properly, introduce a shared store
-for fan-out and rate limits (gap P17). See docs/scaling.md.
+for fan-out and rate limits. See docs/scaling.md.
 ```
 
 Detection reads `WEB_CONCURRENCY`, then `UVICORN_WORKERS`, then `WORKERS`, then a

@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // A valid in-memory token (a test seed, a hot reload) is a session from the
   // first paint; anything else must be *proven* by the boot refresh, so
   // `initialised` stays false until it answers — no login flash for a visitor
-  // whose refresh cookie is perfectly valid (gap S9).
+  // whose refresh cookie is perfectly valid.
   const [token, setToken] = useState<string | null>(() => getValidAccessToken());
   const [initialised, setInitialised] = useState<boolean>(
     () => getValidAccessToken() !== null
@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionExpired, setSessionExpired] = useState(false);
   // Single-flight: the boot refresh, the expiry timer and any mid-request 401
   // share one promise — rotating the refresh cookie twice in parallel would
-  // strand one of them on a spent token (gap S7).
+  // strand one of them on a spent token.
   const refreshInFlight = useRef<Promise<boolean> | null>(null);
 
   const endSession = useCallback(
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Spend the refresh cookie for a new access token — once at a time, for any
    * caller. Resolves `true` only when a new token is in memory; `false` never
    * logs anyone out by itself, because *who* asked decides that (boot failure
-   * is "not signed in", a mid-session failure is an expiry — gaps S7/S9).
+   * is "not signed in", a mid-session failure is an expiry).
    */
   const renewSession = useCallback((): Promise<boolean> => {
     if (refreshInFlight.current) return refreshInFlight.current;
@@ -89,14 +89,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     // Server first: revoking the stored refresh token is the whole point of
-    // logout now (gap S7). The local session ends regardless of the answer —
+    // logout now. The local session ends regardless of the answer —
     // a failed revoke simply ages out with the cookie.
     void logoutUser().catch(() => undefined);
     endSession(false);
   }, [endSession]);
 
   // Register the renewal seams while a session is live: the API client's 401
-  // rescue and its expiry handler (gaps F4/F5/S7).
+  // rescue and its expiry handler.
   useEffect(() => {
     if (!token) {
       setSessionRefresher(null);
@@ -114,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     // Renew *at* expiry instead of ending the session: the refresh cookie, not
-    // this token, is the session now (gap S7). A renewal that fails is a real
+    // this token, is the session now. A renewal that fails is a real
     // expiry — the cookie is gone with it — and lands exactly where the old
     // hard timeout did: login, with the expiry notice.
     const timer = window.setTimeout(() => {
@@ -130,8 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [endSession, renewSession, token]);
 
-  // Boot (gaps S9/S7): no token in memory, so the only way in is the cookie.
-  // The pre-S9 `localStorage` copy — if any — is adopted once and deleted,
+  // Boot: no token in memory, so the only way in is the cookie.
+  // The legacy `localStorage` copy — if any — is adopted once and deleted,
   // which migrates already-signed-in browsers off the XSS-readable storage.
   useEffect(() => {
     if (getValidAccessToken() !== null) return;

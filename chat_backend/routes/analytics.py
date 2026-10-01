@@ -20,7 +20,7 @@ def sentiment_analysis(
 ):
     """Score ad-hoc text (sync: FastAPI runs it in the threadpool).
 
-    A model that cannot load is a `503`, not a `500` (gap A6): the service is
+    A model that cannot load is a `503`, not a `500`: the service is
     reachable but this capability is not, which is exactly what a client needs
     to know to retry later instead of blaming the request.
     """
@@ -37,8 +37,8 @@ async def daily_summary(
 ):
     """Summarise the caller's messages from today (UTC).
 
-    The stored text is bounded per message (gap D6) but a day of it is not, so
-    `summarize_text` chunks internally (gap A2) and never overshoots the model's
+    The stored text is bounded per message but a day of it is not, so
+    `summarize_text` chunks internally and never overshoots the model's
     token limit.
     """
     today = datetime.now(timezone.utc).date()
@@ -61,9 +61,9 @@ async def daily_summary(
     full_text = " ".join(msg.text for msg in messages)
     try:
         # Off the event loop: the pipeline call is blocking CPU work, and a busy
-        # day is several sequential model calls (gap A2). Called straight, it
+        # day is several sequential model calls. Called straight, it
         # froze every other request on this worker — chat, the WebSocket and the
-        # health probes included. The write path already does this (gap A4).
+        # health probes included. The write path already does this.
         summary = await asyncio.to_thread(summarize_text, full_text)
     except ModelUnavailableError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
@@ -76,18 +76,18 @@ async def sentiment_timeline(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """The caller's sentiment over the last `days` UTC days (gap A3).
+    """The caller's sentiment over the last `days` UTC days.
 
-    Every stored score is read back — no inference runs on a read path (gap A4)
+    Every stored score is read back — no inference runs on a read path
     — so this is a plain aggregate over `message_sentiment`, and each row carries
-    the model that produced it (gap A7). Days with no activity are omitted rather
+    the model that produced it. Days with no activity are omitted rather
     than returned as zeros, so the client can draw a line without inventing
-    points. Messages whose scoring failed (gap A6) count in `messages` but not in
+    points. Messages whose scoring failed count in `messages` but not in
     `positive`/`negative` or `avg_score`.
     """
     since = datetime.now(timezone.utc) - timedelta(days=days)
     # `timestamptz` + explicit UTC: the grouping does not depend on the server's
-    # `TimeZone` setting (gap D7).
+    # `TimeZone` setting.
     day = func.date(func.timezone("UTC", models.Message.timestamp)).label("day")
     result = await db.execute(
         select(

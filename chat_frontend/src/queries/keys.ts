@@ -1,5 +1,5 @@
 /**
- * Every query key in one place (docs/DESIGN_DECISIONS.md Q28, gap F16).
+ * Every query key in one place (docs/design_decisions.md).
  *
  * Convention: `[<resource>, <scope>, …]` — the resource first, so a broad
  * `invalidateQueries({ queryKey: queryKeys.messages.all })` targets a whole
@@ -13,7 +13,7 @@ export const queryKeys = {
     feed: (userId: number | null) => ["messages", "feed", userId] as const,
   },
   // Profiles are per user id, so a name is fetched once and reused by every
-  // message that author wrote (gap F10).
+  // message that author wrote.
   users: {
     all: ["users"] as const,
     profile: (userId: number) => ["users", "profile", userId] as const,

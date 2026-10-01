@@ -1,4 +1,4 @@
-"""The single-process guard (gap N5).
+"""The single-process guard.
 
 The guard's whole job is to turn a silent failure into a loud one, so these tests
 assert on what it *detects* and *says* — not merely that it returns a number.

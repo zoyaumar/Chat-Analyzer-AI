@@ -50,7 +50,7 @@ vi.mock("../realtime/useChatSocket", async (importOriginal) => {
 });
 
 const PAGE_SIZE = 100;
-/** The backend's limit, mirrored by the composer (gap B6). */
+/** The backend's limit, mirrored by the composer. */
 const MAX_MESSAGE_LENGTH = 4000;
 
 /** Hand a frame to the page the way the socket hook would. */
@@ -127,7 +127,7 @@ describe("Chat", () => {
     await screen.findByText("Pushed by the server");
 
     // Our own echo arrives the same way as anybody else's message, so a second
-    // copy of it must not appear (gap F6). Flush the scheduler before counting.
+    // copy of it must not appear. Flush the scheduler before counting.
     pushFrame((options) => options.onMessage(pushed));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -148,7 +148,7 @@ describe("Chat", () => {
 
     await waitFor(() => expect(socket.send).toHaveBeenCalledWith("Hello there"));
     expect(await screen.findByLabelText("Message")).toHaveValue("");
-    // Socket-first: HTTP is the fallback, not a parallel path (gap F11).
+    // Socket-first: HTTP is the fallback, not a parallel path.
     expect(sendMessage).not.toHaveBeenCalled();
   });
 

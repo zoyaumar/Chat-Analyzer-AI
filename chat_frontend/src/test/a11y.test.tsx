@@ -1,5 +1,5 @@
 /**
- * The automated accessibility audit that closes the remaining half of gap F12.
+ * The automated accessibility audit for the screens no other test covers.
  *
  * Every screen here is rendered the way `App` mounts it — real router, real
  * auth context, real `Navbar` — and handed to axe-core, so a new screen cannot

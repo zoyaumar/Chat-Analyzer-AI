@@ -1,6 +1,6 @@
 # Option A (three services): db + api + web.
 # The browser talks only to `web` (nginx), which serves the SPA and proxies
-# API/WebSocket traffic to `api` — single origin (docs/DESIGN_DECISIONS.md Q34/Q41).
+# API/WebSocket traffic to `api` — single origin (docs/design_decisions.md).
 #
 # Usage:
 #   cp .env.example .env   # set SECRET_KEY
@@ -32,10 +32,10 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-14}
       REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
-      # Load the models at boot rather than inside the first request (gap N2).
+      # Load the models at boot rather than inside the first request.
       AI_WARMUP_ON_STARTUP: ${AI_WARMUP_ON_STARTUP:-true}
       # HuggingFace caches under $HF_HOME; on a volume it survives a redeploy,
-      # so the weights are downloaded once instead of on every start (gap N3).
+      # so the weights are downloaded once instead of on every start.
       HF_HOME: /cache/huggingface
     volumes:
       - huggingface:/cache/huggingface
@@ -44,7 +44,7 @@ services:
         condition: service_healthy
     # Not published: only `web` reaches it, on the Compose network.
     # Memory: both models plus the torch runtime are resident in this one
-    # process, so the limit is set from a measured peak (gap N4) with headroom
+    # process, so the limit is set from a measured peak with headroom
     # for the transient allocations of an in-flight summary. Exceeding it is a
     # kill, so this is deliberately above the measured peak rather than at it.
     deploy:

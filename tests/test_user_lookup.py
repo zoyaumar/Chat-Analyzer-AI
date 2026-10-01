@@ -1,4 +1,4 @@
-"""`GET /users/{user_id}` and the account timestamp (gaps F10, D5).
+"""`GET /users/{user_id}` and the account timestamp.
 
 Attribution only needs a name, so a message's `user_id` can now be turned into
 a username — without widening what any client can read about a user.
@@ -18,7 +18,7 @@ def _auth(token: str) -> dict:
 
 
 async def test_registration_reports_created_at(client):
-    """`users.created_at` is exposed, so a client can say when an account started (D5)."""
+    """`users.created_at` is exposed, so a client can say when an account started."""
     body = await _register(client, "carol")
 
     assert body["username"] == "carol"
@@ -41,7 +41,7 @@ async def test_a_profile_never_leaks_the_password_hash(client, user_and_token):
 
     body = (await client.get(f"/users/{me['id']}", headers=_auth(token))).json()
 
-    assert set(body) == {"id", "username", "created_at"}  # gap S3
+    assert set(body) == {"id", "username", "created_at"}  # public shape: no hash, no email
 
 
 async def test_an_unknown_user_is_404(client, user_and_token):

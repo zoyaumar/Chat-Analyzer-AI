@@ -38,15 +38,15 @@ jobs:
         run: ruff check chat_backend tests alembic
       - name: Type-check
         run: mypy
-      # Reports, but does not gate yet (gap O12). Everything the pins control
+      # Reports, but does not gate yet. Everything the pins control
       # now audits clean — fastapi/starlette, python-multipart, python-dotenv
       # were all moved off their advisories. What is left is `transformers
       # 4.53.0`: 12 advisories, 9 of which have no fixed release at all and 3
       # of which are only fixed in the 5.x line (a major bump this suite's
-      # model fixtures would have to be re-validated against, with the A7
-      # evaluation as the safety net). Until that migration happens, this step
+      # model fixtures would have to be re-validated against, with the AI
+      # evaluation suite as the safety net). Until that migration happens, this step
       # lists the remainder so it cannot grow unnoticed.
-      - name: Audit dependencies (gap O12)
+      - name: Audit dependencies
         continue-on-error: true
         run: |
           pip install pip-audit
@@ -96,7 +96,7 @@ jobs:
           cache-dependency-path: chat_frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Audit production dependencies (gap O12)
+      - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Lint
         run: npm run lint

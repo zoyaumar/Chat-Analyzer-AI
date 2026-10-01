@@ -18,10 +18,10 @@ import {
   type SocketStatus,
 } from "../realtime/useChatSocket";
 
-/** The backend's limit (`MessageCreate`), mirrored so the composer cannot overshoot (B6). */
+/** The backend's limit (`MessageCreate`), mirrored so the composer cannot overshoot. */
 const MAX_MESSAGE_LENGTH = 4000;
 
-/** A session-wide error is already handled by `AuthProvider` (F5); it needs no banner. */
+/** A session-wide error is already handled by `AuthProvider`; it needs no banner. */
 function errorText(error: unknown, fallback: string): string {
   return error && !isUnauthorized(error) ? fallback : "";
 }
@@ -39,7 +39,7 @@ const STATUS_TEXT: Record<SocketStatus, string> = {
  *
  * An unconfirmed socket send is deliberately *not* retried over HTTP: the server
  * may already have stored it, so the honest move is to warn and let the user look
- * at the feed before sending again (gap F11).
+ * at the feed before sending again.
  */
 function sendFailureText(error: unknown): string {
   if (isUnauthorized(error)) return "";
@@ -76,7 +76,7 @@ export default function Chat() {
     onError: setSocketError,
   });
 
-  // Attribution (gap F10): every author other than the reader is looked up once.
+  // Attribution: every author other than the reader is looked up once.
   // The feed is the only source of ids, so a name appears as soon as the message
   // does — including one that arrived over the socket.
   const otherUserIds = useMemo(
@@ -165,7 +165,7 @@ export default function Chat() {
           feedRef={feedRef}
           isLoading={feed.isLoading}
         />
-        {/* One column on a phone, composer and button side by side from `sm` (gap F12). */}
+        {/* One column on a phone, composer and button side by side from `sm`. */}
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
             aria-label="Message"

@@ -1,5 +1,5 @@
 /**
- * The auth forms' own behaviour (gap T2, the remainder). The axe audit proves
+ * The auth forms' own behaviour. The axe audit proves
  * these screens are *accessible*; it cannot prove they submit the right values
  * or say the right thing when the API refuses — so these do.
  *
@@ -127,7 +127,7 @@ function submit(formName: RegExp | string) {
   fireEvent.submit(form);
 }
 
-describe("login form (T2)", () => {
+describe("login form", () => {
   it("sends the credentials form-encoded, as the endpoint requires", async () => {
     renderLogin();
 
@@ -175,7 +175,7 @@ describe("login form (T2)", () => {
   });
 });
 
-describe("register form (T2)", () => {
+describe("register form", () => {
   it("posts JSON and moves on to the login screen", async () => {
     renderRegister();
 

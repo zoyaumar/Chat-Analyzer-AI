@@ -23,7 +23,7 @@ export const loginUser = (data: { username: string; password: string }) =>
   });
 
 /**
- * Trade the refresh cookie for a new access token (gaps S7/S9, Q9). The
+ * Trade the refresh cookie for a new access token. The
  * cookie is `HttpOnly`, so only the browser carries it — this call is the
  * *only* thing that can spend it, and it never triggers its own refresh.
  */
@@ -33,14 +33,14 @@ export const refreshSession = () =>
     skipRefresh: true,
   });
 
-/** Revoke the session's refresh token server-side and retire the cookie (S7). */
+/** Revoke the session's refresh token server-side and retire the cookie. */
 export const logoutUser = () =>
   apiPost<{ detail: string }>("/users/logout", undefined, {
     skipUnauthorizedHandler: true,
     skipRefresh: true,
   });
 
-/** A message author's name, for attribution in the feed (gap F10). */
+/** A message author's name, for attribution in the feed. */
 export const getUserProfile = (userId: number) =>
   apiGet<UserProfile>(`/users/${userId}`);
 
@@ -66,7 +66,7 @@ export const getDailySummary = () => apiGet<SummaryResult>("/analytics/daily");
 
 /**
  * A pure SQL aggregate over stored scores, so the dashboard it feeds runs no
- * inference and stays fast regardless of how heavy the models are (gap A3/P12).
+ * inference and stays fast regardless of how heavy the models are.
  */
 export const getSentimentTimeline = (days: number) =>
   apiGet<SentimentTimeline>("/analytics/sentiment/timeline", { days });

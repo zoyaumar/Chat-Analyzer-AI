@@ -1,5 +1,5 @@
 /**
- * The Chat page against the real API stack (gap T5).
+ * The Chat page against the real API stack.
  *
  * Everything except three seams is live: `apiClient`, TanStack Query, the
  * merge helper and the composer all run for real and talk to MSW handlers
@@ -60,7 +60,7 @@ afterEach(() => {
 afterAll(() => server.close());
 
 beforeEach(() => {
-  // The API client reads the bearer token from memory, not storage (gap S9).
+  // The API client reads the bearer token from memory, not storage.
   setAccessToken("msw-token");
 });
 
@@ -121,7 +121,7 @@ describe("Chat page against the API (MSW)", () => {
     );
   });
 
-  it("names another author by looking the profile up once (gap F10)", async () => {
+  it("names another author by looking the profile up once", async () => {
     resetMswState([
       mswMessage(1, 0, "Message from bob", 2),
       mswMessage(2, 1, "Another one from bob", 2),
