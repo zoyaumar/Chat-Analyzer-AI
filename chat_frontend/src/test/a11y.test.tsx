@@ -8,11 +8,12 @@
  * states they already render; this file is the inventory of screens that have
  * nowhere else to be.
  */
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { AuthProvider } from "../auth/AuthContext";
+import SentimentChart from "../components/SentimentChart";
 import Analytics from "../pages/Analytics";
 import Login from "../pages/Login";
 import Register from "../pages/Register";
@@ -52,6 +53,24 @@ describe("accessibility audit (axe)", () => {
     renderScreen(<Analytics />, "/analytics");
 
     await expectNoA11yViolations(document.body);
+  });
+
+  it("the trend chart has no axe violations, with data present", async () => {
+    // The analytics audit above renders an *empty* window, so the chart is never
+    // in the tree. An SVG carrying data is exactly the element most likely to
+    // trip an accessibility rule, so it is audited with some.
+    const { container } = render(
+      <SentimentChart
+        entries={[
+          { date: "2026-02-10", messages: 4, positive: 3, negative: 1, avg_score: 0.82 },
+          { date: "2026-02-11", messages: 7, positive: 6, negative: 1, avg_score: 0.91 },
+        ]}
+      />
+    );
+
+    await expectNoA11yViolations(container);
+    // The graphic names itself and says where the same figures are readable.
+    expect(screen.getByRole("img")).toHaveAccessibleName(/table below/i);
   });
 
   it("has teeth: inaccessible markup is still reported", async () => {

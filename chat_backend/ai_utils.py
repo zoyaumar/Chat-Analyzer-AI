@@ -42,6 +42,9 @@ _CAPABILITY_TASKS = {"sentiment": _SENTIMENT_TASK, "summary": _SUMMARY_TASK}
 
 # Manual double-checked caching: `lru_cache` would let two threads both miss
 # and both download ~2 GB of weights (gaps B5/A6).
+# PER-PROCESS BY DESIGN. N workers = N copies of the weights in memory, and the
+# startup guard refuses to stay quiet about it. Breaks at >1 worker — see
+# docs/scaling.md.
 _PIPELINES: dict[str, Any] = {}
 _LOAD_LOCK = threading.Lock()
 _LOAD_FAILURES: dict[str, str] = {}

@@ -10,7 +10,7 @@
  * nothing here leaks between files.
  */
 import { http, HttpResponse } from "msw";
-import type { Message } from "../types";
+import type { Message, SentimentTimelineEntry } from "../types";
 
 export interface RecordedFeedRequest {
   searchParams: URLSearchParams;
@@ -24,6 +24,10 @@ export const mswState = {
   feedRequests: [] as RecordedFeedRequest[],
   /** Every user id the feed asked a name for (gap F10), oldest first. */
   profileRequests: [] as number[],
+  /** Timeline days the trend chart asked for (gap P12), oldest first. */
+  timelineRequests: [] as number[],
+  /** What `GET /analytics/sentiment/timeline` answers with. */
+  timeline: [] as SentimentTimelineEntry[],
 };
 
 let nextId = 1;
@@ -33,7 +37,20 @@ export function resetMswState(messages: Message[] = []): void {
   mswState.messages = [...messages].sort((a, b) => a.id - b.id);
   mswState.feedRequests = [];
   mswState.profileRequests = [];
+  mswState.timelineRequests = [];
+  mswState.timeline = [];
   nextId = Math.max(0, ...messages.map((m) => m.id)) + 1;
+}
+
+/** A timeline day for the trend chart fixture (gap P12). */
+export function mswTimelineEntry(
+  date: string,
+  messages: number,
+  positive: number,
+  negative: number,
+  avgScore: number
+): SentimentTimelineEntry {
+  return { date, messages, positive, negative, avg_score: avgScore };
 }
 
 /** A message whose id and timestamp both ascend with `offsetSeconds`. */
@@ -129,4 +146,14 @@ export const handlers = [
   http.get("/analytics/daily", () =>
     HttpResponse.json({ date: "2026-09-25", summary: "Today was positive." })
   ),
+
+  // The trend chart (gaps A3/P12). `timelineRequests` records the `days` each
+  // call asked for, so a test can prove the window selector reaches the wire.
+  http.get("/analytics/sentiment/timeline", ({ request }) => {
+    const days = Number(new URL(request.url).searchParams.get("days") ?? "30");
+    mswState.timelineRequests.push(days);
+    // Whatever window was asked for, the fixture answers with the same days:
+    // the API omits empty days, and the test owns which days those are.
+    return HttpResponse.json({ days, timeline: mswState.timeline });
+  }),
 ];

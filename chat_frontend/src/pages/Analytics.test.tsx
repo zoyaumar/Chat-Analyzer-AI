@@ -1,21 +1,28 @@
-import { cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Analytics from "./Analytics";
 import { ApiError } from "../apiClient";
 import { renderWithQueryClient } from "../test/renderWithQueryClient";
 
-const { analyzeSentiment, getDailySummary } = vi.hoisted(() => ({
+const { analyzeSentiment, getDailySummary, getSentimentTimeline } = vi.hoisted(() => ({
   analyzeSentiment: vi.fn(),
   getDailySummary: vi.fn(),
+  getSentimentTimeline: vi.fn(),
 }));
 
-vi.mock("../api", () => ({ analyzeSentiment, getDailySummary }));
+vi.mock("../api", () => ({ analyzeSentiment, getDailySummary, getSentimentTimeline }));
 
 vi.mock("../components/Navbar", () => ({
   default: () => <nav>Navigation</nav>,
 }));
 
 describe("Analytics", () => {
+  // The trend dashboard (gap P12) is not click-gated, so the default in every
+  // test below is an empty window unless a test says otherwise.
+  beforeEach(() => {
+    getSentimentTimeline.mockResolvedValue({ days: 30, timeline: [] });
+  });
+
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -108,5 +115,59 @@ describe("Analytics", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: "Daily Summary" })
     ).toBeInTheDocument();
+  });
+
+  // --- Trend dashboard (gap P12, the A3 remainder) ------------------------
+  // The endpoint already existed; what was missing was anything that read it.
+  // These pin the three states that matter: data, no data, and a changed window.
+
+  it("charts the timeline and tabulates the same figures", async () => {
+    getSentimentTimeline.mockResolvedValue({
+      days: 30,
+      timeline: [
+        { date: "2026-02-10", messages: 4, positive: 3, negative: 1, avg_score: 0.82 },
+        { date: "2026-02-11", messages: 7, positive: 6, negative: 1, avg_score: 0.91 },
+      ],
+    });
+    renderWithQueryClient(<Analytics />);
+
+    // The SVG names itself, so it is not an unlabelled graphic to a screen
+    // reader — and it says where the real data lives.
+    expect(
+      await screen.findByRole("img", { name: /sentiment trend across 2 active days/i })
+    ).toBeInTheDocument();
+
+    // Every number in the chart is also readable as text, which is what makes
+    // the graphic decorative rather than load-bearing.
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("2026-02-10")).toBeInTheDocument();
+    expect(within(table).getByText("0.82")).toBeInTheDocument();
+    expect(within(table).getByText("2026-02-11")).toBeInTheDocument();
+
+    // A read of stored scores, so it loads on its own rather than on a click.
+    expect(getSentimentTimeline).toHaveBeenCalledWith(30);
+  });
+
+  it("explains an empty window rather than drawing an empty chart", async () => {
+    getSentimentTimeline.mockResolvedValue({ days: 30, timeline: [] });
+    renderWithQueryClient(<Analytics />);
+
+    expect(
+      await screen.findByText(/no scored messages in the last 30 days/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /sentiment trend/i })).not.toBeInTheDocument();
+  });
+
+  it("refetches when the window is narrowed", async () => {
+    getSentimentTimeline.mockResolvedValue({
+      days: 30,
+      timeline: [{ date: "2026-02-11", messages: 1, positive: 1, negative: 0, avg_score: 0.9 }],
+    });
+    renderWithQueryClient(<Analytics />);
+    await screen.findByRole("img", { name: /sentiment trend/i });
+
+    fireEvent.change(screen.getByLabelText(/trend window/i), { target: { value: "7" } });
+
+    await waitFor(() => expect(getSentimentTimeline).toHaveBeenCalledWith(7));
   });
 });

@@ -1,7 +1,15 @@
 import { useState } from "react";
 import { isApiError } from "../apiClient";
 import Navbar from "../components/Navbar";
-import { useDailySummary, useSentimentAnalysis } from "../queries/analytics";
+import SentimentChart from "../components/SentimentChart";
+import {
+  useDailySummary,
+  useSentimentAnalysis,
+  useSentimentTimeline,
+} from "../queries/analytics";
+
+/** Window options for the trend chart; the API caps this at 365. */
+const WINDOWS = [7, 30, 90] as const;
 
 function sentimentErrorText(error: Error | null): string {
   if (!error) return "";
@@ -23,12 +31,17 @@ export default function Analytics() {
   const [text, setText] = useState("");
   // The summary is a read, so it becomes a query once the user asks for it.
   const [summaryRequested, setSummaryRequested] = useState(false);
+  const [days, setDays] = useState<number>(30);
 
   const sentiment = useSentimentAnalysis();
   const summary = useDailySummary(summaryRequested);
+  const timeline = useSentimentTimeline(days);
 
   const sentimentError = sentimentErrorText(sentiment.error);
   const summaryError = summaryErrorText(summary.error);
+  const timelineError = summaryErrorText(timeline.error);
+
+  const entries = timeline.data?.timeline ?? [];
 
   const handleSentiment = () => {
     if (!text.trim() || sentiment.isPending) return;
@@ -93,6 +106,77 @@ export default function Analytics() {
               <span className="font-semibold capitalize">{sentiment.data.label}</span>{" "}
               ({(sentiment.data.score * 100).toFixed(1)}% confidence)
             </div>
+          )}
+        </div>
+
+        <div className="mb-6 max-w-2xl">
+          <div className="flex items-baseline justify-between gap-2 mb-2">
+            <h2 className="font-medium">Sentiment Trend</h2>
+            <label className="flex items-center gap-1 text-sm text-gray-600">
+              <span className="sr-only">Trend window</span>
+              <select
+                aria-label="Trend window"
+                className="focus-ring border p-1 text-sm"
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+              >
+                {WINDOWS.map((option) => (
+                  <option key={option} value={option}>
+                    Last {option} days
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {timelineError && (
+            <div role="alert" className="bg-red-100 text-red-700 p-2 rounded mb-2 text-sm">
+              {timelineError}
+            </div>
+          )}
+
+          {timeline.isPending && (
+            <p className="text-sm text-gray-500 p-2">Loading trend...</p>
+          )}
+
+          {timeline.isSuccess && entries.length === 0 && (
+            <p className="text-sm text-gray-500 p-2">
+              No scored messages in the last {days} days. Send a message and it
+              will appear here.
+            </p>
+          )}
+
+          {entries.length > 0 && (
+            <>
+              <SentimentChart entries={entries} />
+              {/* The chart is decorative; this is the data, and it is what the
+                  `aria-label` on the SVG points a screen reader to. */}
+              <table className="w-full text-sm mt-3 border-collapse">
+                <caption className="sr-only">
+                  Daily message counts and mean sentiment score
+                </caption>
+                <thead>
+                  <tr className="text-left text-gray-600 border-b">
+                    <th scope="col" className="py-1 pr-2 font-medium">Date</th>
+                    <th scope="col" className="py-1 pr-2 font-medium">Messages</th>
+                    <th scope="col" className="py-1 pr-2 font-medium">Positive</th>
+                    <th scope="col" className="py-1 pr-2 font-medium">Negative</th>
+                    <th scope="col" className="py-1 font-medium">Mean score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((entry) => (
+                    <tr key={entry.date} className="border-b last:border-0">
+                      <td className="py-1 pr-2">{entry.date}</td>
+                      <td className="py-1 pr-2">{entry.messages}</td>
+                      <td className="py-1 pr-2">{entry.positive}</td>
+                      <td className="py-1 pr-2">{entry.negative}</td>
+                      <td className="py-1">{entry.avg_score.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
 

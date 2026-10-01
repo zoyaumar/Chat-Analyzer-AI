@@ -3,6 +3,7 @@ import type {
   Message,
   MessagePageParams,
   SentimentResult,
+  SentimentTimeline,
   SummaryResult,
   TokenResponse,
   User,
@@ -62,4 +63,11 @@ export const analyzeSentiment = (text: string) =>
   apiPost<SentimentResult>("/analytics/sentiment", { text });
 
 export const getDailySummary = () => apiGet<SummaryResult>("/analytics/daily");
+
+/**
+ * A pure SQL aggregate over stored scores, so the dashboard it feeds runs no
+ * inference and stays fast regardless of how heavy the models are (gap A3/P12).
+ */
+export const getSentimentTimeline = (days: number) =>
+  apiGet<SentimentTimeline>("/analytics/sentiment/timeline", { days });
 

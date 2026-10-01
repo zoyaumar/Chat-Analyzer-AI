@@ -17,9 +17,15 @@ product decision rather than the default, because it would push messages a reade
 cannot fetch again (S2). It is listed as a future feature (gap P16) and is not
 implemented here.
 
-One process, one registry (gap Q18): the fan-out is in memory, and `send_to_user`
+One process, one registry (gaps Q18/N5): the fan-out is in memory, and `send_to_user`
 is best effort — a socket that fails to receive is dropped rather than blocking
 the writer.
+
+**PER-PROCESS BY DESIGN.** The connection registry below is a module-level dict, so
+with more than one worker a socket held by worker A never receives a message written
+through worker B. Each user sees a partial conversation, and nothing is logged. The
+startup guard announces this loudly rather than leaving it to be discovered; scaling
+out properly needs a shared broker (gap P17). See `docs/scaling.md`.
 """
 
 import asyncio

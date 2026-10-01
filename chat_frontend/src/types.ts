@@ -37,3 +37,21 @@ export interface SummaryResult {
   date: string;
   summary: string;
 }
+
+/**
+ * `GET /analytics/sentiment/timeline` — one entry per UTC day that had
+ * activity. Days without messages are omitted rather than zero-filled, so a
+ * gap in the data is a gap in the chart (gap A3/P12).
+ */
+export interface SentimentTimelineEntry {
+  date: string;
+  messages: number;
+  positive: number;
+  negative: number;
+  avg_score: number;
+}
+
+export interface SentimentTimeline {
+  days: number;
+  timeline: SentimentTimelineEntry[];
+}

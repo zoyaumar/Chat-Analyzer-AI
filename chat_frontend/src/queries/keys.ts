@@ -21,5 +21,8 @@ export const queryKeys = {
   analytics: {
     all: ["analytics"] as const,
     dailySummary: ["analytics", "daily"] as const,
+    // Scoped by window: 7 days and 30 days are different answers, so they are
+    // different cache entries rather than one being refetched over the other.
+    timeline: (days: number) => ["analytics", "timeline", days] as const,
   },
 } as const;

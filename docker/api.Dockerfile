@@ -16,4 +16,8 @@ COPY chat_backend/ chat_backend/
 EXPOSE 8000
 
 # Migrations first: Alembic is the only writer of DDL (gap O3).
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn chat_backend.main:app --host 0.0.0.0 --port 8000"]
+# -- single process on purpose (gap N5) --
+# The model weights, the rate-limit counters and the WebSocket registry are all
+# per-process, so a second worker silently splits fan-out and multiplies memory.
+# Explicit rather than implied: see docs/scaling.md.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn chat_backend.main:app --host 0.0.0.0 --port 8000 --workers 1"]

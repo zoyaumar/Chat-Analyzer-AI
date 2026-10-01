@@ -13,7 +13,7 @@
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
 
 **Status:** v0.2 — the core flows work end to end: auth, realtime chat, persistence and NLP
-analytics, containerised and test-covered (127 backend / 79 frontend tests). See
+analytics, containerised and test-covered (135 backend / 90 frontend tests). See
 [Milestones](#milestones--roadmap) for what is done and what comes next.
 
 ---
@@ -30,7 +30,7 @@ analytics, containerised and test-covered (127 backend / 79 frontend tests). See
 - [Environment variables](#environment-variables)
 - [Database & migrations](#database--migrations)
 - [API reference](#api-reference) — full reference in [`docs/api-reference.md`](docs/api-reference.md)
-- [Deployment](#deployment)
+- [Deployment](#deployment) — including [single-process scaling](#scaling-one-process-deliberately)
 - [Testing & code quality](#testing--code-quality)
 - [Milestones & roadmap](#milestones--roadmap)
 - [Contributing](#contributing)
@@ -80,7 +80,7 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Analytics | Sentiment analysis | ✅ scored once at write time and stored per message; ad-hoc repeats answered from a cache |
 | Analytics | Daily summary | ✅ user-scoped UTC day window, chunked map-reduce summarisation, smaller pinned model |
 | Analytics | Sentiment timeline (`GET /analytics/sentiment/timeline?days=N`) | ✅ daily counts and mean score, read from stored results |
-| Analytics | Analytics dashboard (sentiment trends and volume charts) | 🔨 planned |
+| Analytics | Trend dashboard (7/30/90-day window, SVG chart + data table) | ✅ loads on its own; a pure SQL read, so it runs no inference |
 | Data | Alembic as the single schema owner | ✅ real initial migration; `create_all()` removed; `alembic check` reports no drift |
 | Data | Async database access (`asyncpg` + `AsyncSession`) | ✅ |
 | Frontend | Login / register / chat / analytics screens, routing, logout | ✅ |
@@ -89,6 +89,7 @@ Legend: ✅ works today · 🟡 works with caveats · 🔨 decided and scheduled
 | Frontend | Loading, error and empty states | ✅ |
 | Frontend | Visible keyboard focus, labelled feed, narrow-screen layout | ✅ |
 | Ops | Docker Compose stack (`db` + `api` + `web`) | ✅ |
+| Ops | Single-process pin with a startup worker-count guard | ✅ `--workers 1`; a misconfigured deploy logs an `ERROR` at boot |
 | Ops | Backend tests (pytest + httpx) and frontend tests (Vitest) | ✅ |
 | Ops | CI on every push (lint, type-check, migrations, tests, `npm audit`) | ✅ |
 | Ops | Dependency updates and CVE scanning (Dependabot + `pip-audit`) | ✅ |
@@ -188,7 +189,7 @@ Request flow in words:
 | Same-origin access | Vite dev proxy + nginx `web` container in production | in use (hard-coded URLs removed) |
 | Token parsing | `jwt-decode` for UI attribution | in use |
 | Lint | ESLint 9 flat config (`typescript-eslint`, react-hooks, react-refresh) | in use |
-| Tests | Vitest + React Testing Library + MSW | in use (79 tests: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, MSW page-level, axe accessibility) |
+| Tests | Vitest + React Testing Library + MSW | in use (90 tests: auth, auth forms, chat UI, realtime socket hook, wire protocol, analytics + trend dashboard, `fetch` client, query policy, MSW page-level, axe accessibility) |
 
 ## Repository layout
 
@@ -228,6 +229,7 @@ Chat-Analyzer-AI/
 │   ├── crud.py                    # service layer shared by REST and the WebSocket handler
 │   ├── realtime.py                # wire frames + the per-user connection registry
 │   ├── ratelimit.py               # per-client sliding-window limiters + FastAPI dependencies
+│   ├── scaling.py                 # single-process guard: worker count, loud boot-time warning
 │   ├── observability.py           # JSON-lines logging + X-Request-ID middleware
 │   └── routes/
 │       ├── users.py               # register, login, refresh, logout, /users/me, /users/{id}, delete me
@@ -344,7 +346,7 @@ Vite serves the SPA at <http://localhost:5173>. Register a user, log in, and you
 | `npm run build` | `chat_frontend/` | type-check (`tsc -b`) + production bundle |
 | `npm run lint` | `chat_frontend/` | ESLint over the SPA |
 | `npm audit --omit=dev --audit-level=high` | `chat_frontend/` | CVE gate for the production dependency tree |
-| `npm test` | `chat_frontend/` | Vitest suite (79 tests across 12 files: auth, chat UI, realtime socket hook, wire protocol, analytics, `fetch` client, query policy, attribution, MSW page-level, CSP baseline, axe accessibility audits) |
+| `npm test` | `chat_frontend/` | Vitest suite (90 tests across 13 files: auth, auth forms, chat UI, realtime socket hook, wire protocol, analytics + trend dashboard, `fetch` client, query policy, attribution, MSW page-level, CSP baseline, axe accessibility audits) |
 | `py -m compileall chat_backend` | repo root | quick syntax check of the backend |
 
 ## Definition of shippable
@@ -389,7 +391,6 @@ run, trust and deploy. All of the following are true today:
 | `AI_SENTIMENT_REVISION` | no | pinned 40-char SHA | Exact upstream revision of the sentiment model; empty means "follow the main branch". |
 | `AI_SUMMARY_MODEL` | no | `sshleifer/distilbart-cnn-6-6` | Summarisation model (replaces `facebook/bart-large-cnn`). |
 | `AI_SUMMARY_REVISION` | no | pinned 40-char SHA | Exact upstream revision of the summary model; empty means "follow the main branch". |
-| `AI_INFERENCE_URL` | no | – | Not implemented — the summariser and sentiment models run in the API process. Listed only so an operator does not expect it to take effect. |
 | `AI_WARMUP_ON_STARTUP` | no | `false` (`true` in Compose) | Load both models at container start rather than on the first request, so the download and init do not sit on a user request. Best-effort — failures are reported by `/health/ready`, never fatal. |
 | `API_MEMORY_LIMIT` | no | `2g` | Memory limit for the Compose `api` service, which holds both models plus torch. Set from a measured ~1.2 GB peak with headroom. |
 | `LOGIN_RATE_LIMIT` | no | `10` | Login attempts allowed per client address per window before a `429`. |
@@ -529,6 +530,7 @@ Requirements for any host:
 | Requirement | Notes |
 | --- | --- |
 | PostgreSQL 16 (or a managed equivalent) | Only the API talks to it; `DATABASE_URL_SYNC` is used by migrations. |
+| **`--workers 1` — one process, no exceptions** | The model weights, the rate-limit counters and the WebSocket registry are per-process. A second worker splits fan-out silently. See [Scaling](#scaling-one-process-deliberately). |
 | `SECRET_KEY` | Injected as a secret; never generated per deploy (so rolling out a new build must not log every user out). The app refuses to start without it. |
 | Environment variables | See [Environment variables](#environment-variables); nothing is baked into the image. |
 | TLS termination | Any reverse proxy or load balancer; the API itself speaks plain HTTP. |
@@ -539,6 +541,28 @@ Requirements for any host:
 
 Any small VPS or container host with Compose installed is enough: `docker compose up -d --build`.
 
+### Scaling: one process, deliberately
+
+**The API is pinned to a single process, and that is a decision rather than an accident.** Three
+things are per-process by construction: the loaded model weights, the rate-limit counters, and the
+WebSocket connection registry. At two workers a socket held by worker A never receives a message
+written through worker B — each user sees a partial conversation, and **nothing is logged**. The
+sender still gets their own message over the HTTP response, so it looks like it worked.
+
+So: `--workers 1` (or `WEB_CONCURRENCY=1`, or `replicas: 1`) plus a startup guard that logs the
+worker count on every boot and raises a loud `ERROR` if it is above 1. On Kubernetes also set
+`strategy: Recreate` or `maxSurge: 0` — a default `RollingUpdate` briefly runs two pods, and the
+guard reads per-process environment so it cannot see that.
+
+```bash
+docker compose logs api | grep "Worker processes"
+# Worker processes: 1        <- correct
+```
+
+The full reasoning, the failure mode and the Redis path to lifting the ceiling are in
+[`docs/scaling.md`](docs/scaling.md).
+
+
 ## Testing & code quality
 
 | Check | Command | Status |
@@ -546,12 +570,12 @@ Any small VPS or container host with Compose installed is enough: `docker compos
 | Frontend type-check + build | `cd chat_frontend && npm run build` | ✅ passes (`tsc -b && vite build`) |
 | Frontend lint | `cd chat_frontend && npm run lint` | ✅ clean (`eslint .`, exit code 0) |
 | Backend syntax | `py -m compileall chat_backend alembic tests` | ✅ passes |
-| Backend tests | `py -m pytest` | ✅ 127 passing, 2 skipped (the opt-in model evaluation, see below); needs a PostgreSQL, see below |
+| Backend tests | `py -m pytest` | ✅ 135 passing, 2 skipped (the opt-in model evaluation, see below); needs a PostgreSQL, see below |
 | Migrations against an empty database | `alembic upgrade head` + `alembic downgrade base` | ✅ verified on PostgreSQL 16, both directions |
 | Models vs migrations | `alembic check` | ✅ no drift |
 | Backend lint | `ruff check chat_backend tests alembic` | ✅ clean |
 | Backend type-check | `mypy` | ✅ clean (non-strict + pydantic/SQLAlchemy plugins) |
-| Frontend tests | `cd chat_frontend && npm test` | ✅ 79 passing (12 files) |
+| Frontend tests | `cd chat_frontend && npm test` | ✅ 90 passing (13 files) |
 | Frontend production dependency audit | `cd chat_frontend && npm audit --omit=dev --audit-level=high` | ✅ 0 vulnerabilities |
 | Python dependency audit | `python -m pip_audit` | 🟡 `transformers 4.53.0` only — 12 advisories, 9 with no fixed release upstream; everything else audits clean |
 | CI (all of the above on every push) | GitHub Actions | ✅ backend + frontend jobs |
@@ -571,7 +595,10 @@ The AI-specific tests cover scoring once at write time with the model name and r
 stored beside it, a scoring failure that costs only the score, chunking and memoisation unit
 tests (`test_ai_utils.py`), the sentiment timeline (per UTC day, caller-scoped, window-bounded),
 `503` instead of `500` when a model is unavailable, and the model state reported by
-`/health/ready`. The suite runs against a real PostgreSQL — start a disposable one with:
+`/health/ready`. The single-process guard has its own file too (`test_scaling.py`): the worker
+variables a platform might set are read, a nonsense value is not mistaken for extra processes, and
+a multi-worker boot produces an `ERROR` naming all three consequences. The suite runs against a real
+PostgreSQL — start a disposable one with:
 
 ```bash
 docker run --rm -d --name chat-test-pg \
@@ -587,7 +614,7 @@ by default (override with `TEST_DATABASE_URL`), creates the schema from metadata
 redirects, valid-token access, token-expiry handling, REST/socket message de-duplication, the
 owner-only delete and composer interactions, the analytics actions, the keyset "load older" cursor,
 the `fetch` client (token header, query mapping, `ApiError`, 401 handler) and the TanStack Query
-retry policy — 79 tests across 12 files, including the `useChatSocket` hook (heartbeat, backoff,
+retry policy — 90 tests across 13 files, including the `useChatSocket` hook (heartbeat, backoff,
 auth rejection, HTTP fallback), the defensive `parseFrame` protocol tests, MSW page-level tests
 that run the real `apiClient`/query stack against `src/test/handlers.ts` (one of which asserts that
 two messages from the same author cost exactly one profile request), the attribution and
@@ -639,7 +666,9 @@ feed; and dependency updates with CVE scanning in CI.
 | Refresh tokens, server-side logout, `HttpOnly` cookie session | ✅ done |
 | Password/username policy, rate limiting on login and register | ✅ done |
 | Automated accessibility audit (axe) | ✅ done — `src/test/a11y.test.tsx` |
-| A dedicated login-form test | ⬜ open |
+| A dedicated login-form test | ✅ done — `src/test/authForms.test.tsx` |
+| Sentiment trend dashboard (P12) | ✅ done — 7/30/90-day window, SVG chart + data table |
+| Single-process pin + startup guard (N5) | ✅ done — [`docs/scaling.md`](docs/scaling.md) |
 | Tailwind design tokens in a CSS `@theme` block | ⬜ open |
 | Upgrade the Python pins that carry advisories (`transformers`) | ⬜ open — 9 advisories have no fixed release upstream |
 | Types generated from OpenAPI; delete dead files and template leftovers | ⬜ open |
@@ -647,8 +676,9 @@ feed; and dependency updates with CVE scanning in CI.
 | All-users ("global") broadcast to every connected client, not only the author's sockets | ⬜ open |
 | Feature work: rooms/DMs, presence, typing indicators, read receipts, search, attachments | ⬜ open |
 
-**Next up:** the analytics dashboard — sentiment trends and volume charts over the timeline
-endpoint that already exists.
+**Next up:** the multi-replica decision (document the single-worker ceiling, or introduce a shared
+fan-out and rate-limit store), and the product tier — rooms/DMs first, since it is what read
+receipts, global broadcast and per-conversation analytics all sit on top of.
 
 ## Contributing
 

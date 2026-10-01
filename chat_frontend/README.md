@@ -45,7 +45,7 @@ src/
 │   ├── client.test.ts       # retry-policy tests
 │   ├── keys.ts              # the `[<resource>, <scope>]` query-key convention
 │   ├── messages.ts          # useMessageFeed / useSendMessage / useDeleteMessage / socket append
-│   ├── analytics.ts         # sentiment mutation + lazily enabled daily-summary query
+│   ├── analytics.ts         # sentiment mutation, daily summary, trend timeline query
 │   └── users.ts             # useUsernames, batched author lookups cached per id
 ├── types.ts                 # User, Message, pagination params, API response types
 ├── App.tsx                 # BrowserRouter + protected route table
@@ -70,8 +70,8 @@ src/
     ├── Chat.tsx            # paginated feed, owner-only delete, composer, useChatSocket connection
     ├── Chat.test.tsx       # delete, composer, load-older and socket-fallback interaction tests
     ├── Chat.msw.test.tsx   # page-level tests over the real client stack via MSW
-    ├── Analytics.tsx       # sentiment form + daily summary button
-    └── Analytics.test.tsx  # sentiment result/error and daily-summary tests
+    ├── Analytics.tsx       # trend dashboard, sentiment form, daily summary button
+    └── Analytics.test.tsx  # trend states, sentiment result/error, daily-summary tests
 ```
 
 ## Routing

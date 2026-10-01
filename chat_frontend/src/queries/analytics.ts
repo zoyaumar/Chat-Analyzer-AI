@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { analyzeSentiment, getDailySummary } from "../api";
+import { analyzeSentiment, getDailySummary, getSentimentTimeline } from "../api";
 import { queryKeys } from "./keys";
 
 /**
@@ -23,3 +23,21 @@ export function useDailySummary(enabled: boolean) {
     enabled,
   });
 }
+
+/**
+ * `GET /analytics/sentiment/timeline` is the trend view: a read of scores that
+ * were already stored at write time, so it is a query rather than a mutation
+ * and it costs the same whatever the models are doing (gaps A3/A4, P12).
+ *
+ * It is *not* gated behind a click the way the daily summary is. A chart with no
+ * default render is a chart nobody sees, this read is cheap, and the API omits
+ * empty days — so an account with no messages gets a real "nothing yet" answer
+ * instead of a spinner.
+ */
+export function useSentimentTimeline(days: number) {
+  return useQuery({
+    queryKey: queryKeys.analytics.timeline(days),
+    queryFn: () => getSentimentTimeline(days),
+  });
+}
+

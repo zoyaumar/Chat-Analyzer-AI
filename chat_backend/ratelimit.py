@@ -12,8 +12,9 @@ test suite, and needs a reload to tune. The counter is the *in-process* option
 of the still-open "shared state" question (U8) — no Redis, nothing to run.
 
 **What it does not do, stated plainly.**
-- State is per process, so N uvicorn workers multiply every limit by N. That is
-  exact at one worker; a shared store is what makes it exact beyond that (U8).
+- PER-PROCESS BY DESIGN: state is per process, so N uvicorn workers multiply every
+  limit by N. That is exact at one worker, which the startup guard enforces loudly;
+  a shared store is what makes it exact beyond that (gap P17, docs/scaling.md).
 - The bucket key trusts `X-Real-IP`, which is only safe because nginx overwrites
   that header (`docker/nginx.conf`) and the `api` service publishes no port
   (`docker-compose.yml`). Where the API is exposed directly, a client can forge

@@ -16,6 +16,7 @@ from chat_backend.observability import (
     setup_logging,
 )
 from chat_backend.routes import analytics, messages, users, websocket
+from chat_backend.scaling import warn_if_multi_process
 
 setup_logging(logging.DEBUG if settings.debug else logging.INFO)
 logger = logging.getLogger("chat_backend.api")
@@ -80,6 +81,12 @@ async def _lifespan(app: FastAPI):
             # Belt and braces — `warmup` already swallows per-model failures, so
             # reaching here means something unexpected; the app still starts.
             logger.exception("NLP warm-up failed; serving without preloaded models")
+
+    # Announce the single-process pin before serving anything, so a
+    # misconfigured deploy says so in its first log lines rather than showing a
+    # split conversation hours later (gap N5).
+    logger.info("Worker processes: %d", warn_if_multi_process())
+
     yield
 
 
